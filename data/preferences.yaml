@@ -1,0 +1,41 @@
+target_roles:
+  - "Data Engineer"
+  - "Analytics Engineer"
+  - "AI Data Engineer"
+
+work_arrangements:
+  remote: true
+  hybrid: true
+  onsite: true
+
+locations:
+  preferred: []
+  excluded: []
+
+experience:
+  maximum_required_years: 7
+
+seniority:
+  allowed:
+    - "Entry Level"
+    - "Associate"
+    - "Mid Level"
+    - "Senior"
+
+  excluded:
+    - "Staff"
+    - "Principal"
+    - "Director"
+    - "VP"
+
+employment_types:
+  - "Full Time"
+  - "Contract"
+
+hard_filters:
+  active_security_clearance_required: false
+  explicit_no_sponsorship: null
+
+scoring:
+  auto_apply_minimum: 90
+  review_minimum: 80

@@ -1,0 +1,240 @@
+candidate:
+  first_name: "Sai"
+  middle_name: "Nanda Kishan"
+  last_name: "Edimadakala"
+  preferred_name: "Kishan"
+
+contact:
+  email: "sainandakishan@gmail.com"
+  phone: "+1 (945) 444-7666"
+
+location:
+  city: "Palo Alto"
+  state: "CA"
+  country: "United States"
+
+links:
+  linkedin: "https://www.linkedin.com/in/sai-nanda-kishan-edimadakala/"
+  github: ""
+  portfolio: ""
+
+work_authorization:
+  authorized_to_work_us: null
+  requires_sponsorship: null
+  authorization_type: ""
+
+education:
+  - institution: "University of Texas at Dallas"
+    degree: "MS"
+    field_of_study: "Computer Science"
+    start_date: null
+    end_date: "2023-12"
+
+  - institution: "SRM University"
+    degree: "BTech"
+    field_of_study: "Computer Science"
+    start_date: null
+    end_date: "2021-06"
+
+experience:
+  - company: "Amazon"
+    title: "Data Engineer"
+    location: ""
+    start_date: "2024-12"
+    end_date: null
+    current: true
+    description: "Built and operated scalable AWS data engineering, analytics, compliance, data quality, API, and GenAI solutions."
+    technologies:
+      - Python
+      - PySpark
+      - SQL
+      - Airflow
+      - AWS
+      - Redshift
+      - PostgreSQL
+      - AWS Glue
+      - AWS Lambda
+      - AWS Step Functions
+      - SQS
+      - S3
+      - CloudWatch
+      - Kubernetes
+      - Tableau
+      - React
+      - LangChain
+      - LangGraph
+      - RAG
+      - FAISS
+      - Pinecone
+
+  - company: "Raven Software Solutions"
+    title: "Data Engineer"
+    location: ""
+    start_date: "2024-01"
+    end_date: "2024-11"
+    current: false
+    description: "Built Azure data pipelines, data models, governance controls, API integrations, analytics solutions, and CI/CD-driven data infrastructure."
+    technologies:
+      - Python
+      - SQL
+      - Airflow
+      - dbt
+      - Azure
+      - PostgreSQL
+      - Azure Data Explorer
+      - SQL Server
+      - Tableau
+      - Kubernetes
+      - Docker
+      - Jenkins
+      - GitHub Actions
+
+  - company: "MPundit Solutions"
+    title: "Data Analyst"
+    location: ""
+    start_date: "2020-11"
+    end_date: "2021-11"
+    current: false
+    description: "Built SQL and Python data pipelines, analytical models, data quality frameworks, reporting solutions, and predictive analyses."
+    technologies:
+      - Python
+      - SQL
+      - SQL Server
+      - CI/CD
+
+skills:
+  programming:
+    - Python
+    - SQL
+    - KQL
+    - R
+    - Hive
+    - Scala
+    - C#
+    - C
+    - C++
+    - Java
+
+  data_engineering:
+    - PySpark
+    - Spark Structured Streaming
+    - Kafka
+    - Delta Lake
+    - CDC
+    - ETL
+    - Data Lineage
+    - dbt
+    - Informatica
+    - DataStage
+    - SSIS
+
+  cloud:
+    - AWS
+    - Azure
+    - GCP
+    - Databricks
+    - ADF
+    - AWS Glue
+    - AWS Lambda
+    - Redshift
+    - BigQuery
+    - Azure Event Hub
+    - Unity Catalog
+
+  databases:
+    - MySQL
+    - MSSQL
+    - Oracle
+    - PostgreSQL
+    - MongoDB
+    - SQL Server
+    - Snowflake
+    - Redshift
+    - BigQuery
+    - Teradata
+
+  orchestration:
+    - Airflow
+    - AWS Step Functions
+    - ADF
+
+  devops:
+    - GitHub Actions
+    - Jenkins
+    - Kubernetes
+    - Docker
+    - AWS CDK
+    - Bitbucket
+    - GitHub
+
+  analytics:
+    - Tableau
+    - Power BI
+    - Alteryx
+    - Excel
+
+  ai_ml:
+    - RAG
+    - Vector Databases
+    - FAISS
+    - Pinecone
+    - Embeddings
+    - LangChain
+    - LangGraph
+    - XGBoost
+    - Scikit-learn
+    - Pandas
+    - NumPy
+
+projects:
+  - name: "GDPR Compliance Deletion System"
+    description: "Designed and implemented an automated profile-level deletion framework for Amazon Photos to support GDPR compliance across multiple data stores while maintaining audit logs and validation checks."
+    technologies:
+      - AWS Lambda
+      - SQS
+      - Redshift
+      - Python
+      - Java
+      - TypeScript
+
+  - name: "RAG Knowledge Assistant"
+    description: "Built a GenAI knowledge retrieval system for natural-language search over enterprise documents, including metadata filtering and retrieval tuning to improve relevance and reduce hallucinations."
+    technologies:
+      - Python
+      - PySpark
+      - LangChain
+      - LangGraph
+      - FAISS
+      - Pinecone
+      - Embeddings
+      - Vector Databases
+
+  - name: "Photos Curated Memories Nudge System"
+    description: "Built a data pipeline to identify Amazon Photos users with unseen curated memories and trigger reminders, with CloudWatch monitoring for system reliability."
+    technologies:
+      - AWS Redshift
+      - Python
+      - SQL
+      - EC2
+      - S3
+      - CloudWatch
+
+  - name: "Redshift Serverless Reporting Optimization"
+    description: "Implemented Redshift Serverless to offload reporting workloads from the primary Redshift cluster and reduce analytics query contention."
+    technologies:
+      - AWS Redshift Serverless
+      - SQL
+      - Python
+
+  - name: "FIFA World Cup 2026 ML Prediction Engine"
+    description: "Built an end-to-end sports analytics pipeline using a four-model ensemble and Monte Carlo simulation to estimate tournament outcome probabilities."
+    technologies:
+      - Python
+      - XGBoost
+      - Scikit-learn
+      - Pandas
+      - NumPy
+      - Monte Carlo Simulation
+      - REST API
+      - Git
+      - HTML
