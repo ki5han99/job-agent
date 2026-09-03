@@ -1,52 +1,94 @@
-from app.config.loader import load_preferences
-from app.jobs.extractor import extract_job
+from app.browser.client import BrowserClient
+from app.config.loader import load_preferences, load_profile
 from app.jobs.filters import passes_hard_filters
-
+from app.jobs.greenhouse import extract_greenhouse_job
+from app.jobs.scorer import score_job
+from app.jobs.scorer import score_job, classify_score 
+from app.jobs.form_parser import parse_form_fields  
+from app.jobs.field_mapper import map_field_to_value
+from app.jobs.form_filler import fill_ready_fields
 
 def main():
-    preferences = load_preferences()
+    browser = BrowserClient()
+    browser.start()
 
-    description = """
-        We are seeking a Senior Data Engineer to build and maintain
-        large-scale data pipelines using Python, Spark, and AWS.
+    try:
+        job = extract_greenhouse_job(
+            browser,
+            "https://job-boards.greenhouse.io/mill/jobs/4722052005",
+        )
 
-        Candidates should have at least 5 years of professional
-        data engineering experience.
+        fields = parse_form_fields(browser)
+        profile = load_profile()
 
-        This is a full-time hybrid position requiring employees
-        to work from our New York office three days per week.
+        fill_ready_fields(
+            browser=browser,
+            fields=fields,
+            profile=profile,
+        )
 
-        Applicants must be authorized to work in the United States.
-        We are unable to sponsor employment visas now or in the future.
+        print()
+        print("READY fields have been filled.")
+        
 
-        No security clearance is required for this position.
-        """
+        print()
+        print("=== FIELD MAPPINGS ===")
 
-    job = extract_job(
-        title="Senior Data Engineer",
-        company="Example Corp",
-        location="New York, NY",
-        description=description,
-        source="Test",
-        url="https://example.com/jobs/123",
-    )
+        for field in fields:
+            mapping = map_field_to_value(field, profile)
 
-    print()
-    print("=== QWEN EXTRACTION ===")
-    print("Title:", job.title)
-    print("Experience:", job.required_experience_years)
-    print("Seniority:", job.seniority)
-    print("Employment type:", job.employment_type)
-    print("Work arrangement:", job.work_arrangement)
-    print("Sponsorship:", job.sponsorship_available)
-    print("Clearance required:", job.security_clearance_required)
+            print(
+                f"{mapping.label!r} "
+                f"→ {mapping.value!r} "
+                f"[{mapping.status}]"
+            )
+        
+        print()
+        print("=== APPLICATION FIELDS ===")
 
-    result = passes_hard_filters(job, preferences)
+        for field in fields:
+            print(
+                f"Label: {field.label!r} | "
+                f"Type: {field.field_type} | "
+                f"ID: {field.field_id!r} | "
+                f"Required: {field.required}"
+            )
 
-    print()
-    print("=== HARD FILTER RESULT ===")
-    print("Passed:", result.passed)
-    print("Reasons:", result.reasons)
+        preferences = load_preferences()
+        profile = load_profile()
+        
+
+        filter_result = passes_hard_filters(job, preferences)
+        
+
+        print("Title:", job.title)
+        print("Company:", job.company)
+        print("Passed:", filter_result.passed)
+        print("Reasons:", filter_result.reasons)
+
+        if filter_result.passed:
+            score = score_job(job, profile)
+
+            print()
+            print("=== JOB SCORE ===")
+            print("Skill match:", score.skill_match)
+            print("Experience match:", score.experience_match)
+            print("Role alignment:", score.role_alignment)
+            print("Overall score:", score.overall_score)
+            print("Explanation:", score.explanation)
+
+            decision = classify_score(
+                overall_score=score.overall_score,
+                auto_apply_minimum=preferences.scoring.auto_apply_minimum,
+                review_minimum=preferences.scoring.review_minimum,
+            )
+
+        print("Decision:", decision)
+        
+
+    finally:
+        browser.close()
+    
 
 
 if __name__ == "__main__":

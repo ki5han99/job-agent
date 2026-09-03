@@ -1,10 +1,12 @@
 from ollama import chat
 
-
 MODEL_NAME = "qwen3.5:9b"
 
 
-def ask_llm(prompt: str) -> str:
+def ask_llm(
+    prompt: str,
+    temperature: float = 0.2,
+) -> str:
     response = chat(
         model=MODEL_NAME,
         messages=[
@@ -14,6 +16,9 @@ def ask_llm(prompt: str) -> str:
             }
         ],
         think=False,
+        options={
+            "temperature": temperature,
+        },
     )
 
     return response.message.content

@@ -45,6 +45,13 @@ def passes_hard_filters(
         reasons.append(
             f"Work arrangement '{job.work_arrangement}' is not allowed."
         )
+    if (
+        job.security_clearance_required is True
+        and not preferences.hard_filters.allow_security_clearance_required
+    ):
+        reasons.append(
+            "Job requires a security clearance."
+        )
 
     passed = len(reasons) == 0
 
