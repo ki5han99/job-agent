@@ -1,13 +1,15 @@
 from app.browser.client import BrowserClient
-from app.config.models import Profile
+from app.config.models import Preferences, Profile
 from app.jobs.field_mapper import map_field_to_value
 from app.jobs.form_parser import FormField
+from app.jobs.review_field_resolver import resolve_review_field
 
 
 def fill_ready_fields(
     browser: BrowserClient,
     fields: list[FormField],
     profile: Profile,
+    preferences: Preferences,
 ) -> None:
     if browser.page is None:
         raise RuntimeError("Browser has not been started.")
@@ -18,20 +20,29 @@ def fill_ready_fields(
             profile,
         )
 
-        # Skip anything that still needs human review
+        # If the normal mapper cannot answer it,
+        # try the review-field resolver.
         if mapping.status != "READY":
+            resolved = resolve_review_field(
+                field=field,
+                profile=profile,
+                preferences=preferences,
+            )
+
+            if resolved.status != "READY":
+                continue
+
+            value = resolved.value
+
+        else:
+            value = mapping.value
+
+        if value is None:
             continue
 
-        # READY fields should have a value
-        if mapping.value is None:
-            continue
-
-        # We currently locate fields by their HTML id
         if field.field_id is None:
             continue
 
-        # Use an attribute selector instead of "#id".
-        # This safely handles IDs containing characters like [ ].
         element = browser.page.locator(
             f'[id="{field.field_id}"]'
         )
@@ -39,31 +50,31 @@ def fill_ready_fields(
         if element.count() == 0:
             continue
 
-        # Checkbox / toggle
+        # Checkbox
         if field.field_type == "checkbox":
             element.check()
             continue
 
-        # File uploads, such as resume
+        # File upload
         if field.field_type == "file":
-            element.set_input_files(
-                mapping.value
+            element.set_input_files(value)
+            continue
+
+        # Native select
+        if field.field_type == "select":
+            element.select_option(
+                label=value
             )
             continue
 
-        # Custom dropdown / combobox
-        role = element.get_attribute("role")
-
-        if role == "combobox":
+        # Custom Greenhouse combobox
+        if field.role == "combobox":
             element.click()
-
-            element.fill(
-                mapping.value
-            )
+            element.fill(value)
 
             option = browser.page.get_by_role(
                 "option",
-                name=mapping.value,
+                name=value,
                 exact=True,
             )
 
@@ -79,6 +90,4 @@ def fill_ready_fields(
             "email",
             "textarea",
         }:
-            element.fill(
-                mapping.value
-            )
+            element.fill(value)

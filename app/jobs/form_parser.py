@@ -8,10 +8,13 @@ class FormField(BaseModel):
     field_type: str
     name: str | None
     field_id: str | None
+    role: str | None
     required: bool
 
 
-def parse_form_fields(browser: BrowserClient) -> list[FormField]:
+def parse_form_fields(
+    browser: BrowserClient,
+) -> list[FormField]:
     if browser.page is None:
         raise RuntimeError("Browser has not been started.")
 
@@ -24,14 +27,15 @@ def parse_form_fields(browser: BrowserClient) -> list[FormField]:
     for i in range(elements.count()):
         element = elements.nth(i)
 
-        # Ignore invisible/internal form elements
+        # Skip hidden/internal elements
         if not element.is_visible():
             continue
 
         name = element.get_attribute("name")
         field_id = element.get_attribute("id")
+        role = element.get_attribute("role")
 
-        # Ignore CAPTCHA fields
+        # Ignore CAPTCHA infrastructure
         if name == "g-recaptcha-response":
             continue
 
@@ -42,7 +46,7 @@ def parse_form_fields(browser: BrowserClient) -> list[FormField]:
             )
         )
 
-        # Ignore search boxes used inside dropdowns
+        # Ignore search boxes used inside dropdown widgets
         if field_type == "search":
             continue
 
@@ -67,6 +71,7 @@ def parse_form_fields(browser: BrowserClient) -> list[FormField]:
                 field_type=field_type,
                 name=name,
                 field_id=field_id,
+                role=role,
                 required=required,
             )
         )

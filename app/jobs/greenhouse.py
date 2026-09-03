@@ -9,6 +9,9 @@ def extract_greenhouse_job(
 ) -> Job:
     browser.open(url)
 
+    if browser.page is None:
+        raise RuntimeError("Browser has not been started.")
+
     page_text = browser.get_text()
 
     lines = [
@@ -17,12 +20,39 @@ def extract_greenhouse_job(
         if line.strip()
     ]
 
-    title = lines[0]
-    location = lines[1]
+    # Prefer the actual page heading instead of assuming
+    # the first visible line is always the job title.
+    title_element = browser.page.locator("h1")
 
-    company = browser.get_title()
-    company = company.replace("Job Application for ", "")
-    company = company.split(" at ")[-1]
+    if title_element.count() > 0:
+        title = title_element.first.inner_text().strip()
+    elif lines:
+        title = lines[0]
+    else:
+        title = "Unknown"
+
+    # Try to get the location from the text immediately
+    # after the title.
+    location = "Unknown"
+
+    if title in lines:
+        title_index = lines.index(title)
+
+        if title_index + 1 < len(lines):
+            location = lines[title_index + 1]
+
+    # Greenhouse page titles commonly contain the company name.
+    page_title = browser.get_title()
+
+    company = page_title
+
+    if " at " in page_title:
+        company = page_title.split(" at ")[-1]
+
+    company = company.replace(
+        "Job Application for ",
+        "",
+    ).strip()
 
     return extract_job(
         title=title,
