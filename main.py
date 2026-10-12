@@ -1,3 +1,5 @@
+import argparse
+
 from app.browser.client import BrowserClient
 from app.config.loader import load_preferences, load_profile
 from app.jobs.effective_field_mapper import get_effective_mapping
@@ -13,7 +15,7 @@ from app.jobs.readiness import build_readiness_report
 from app.jobs.scorer import classify_score, score_job
 
 
-def main():
+def main(job_url: str):
     browser = BrowserClient()
     browser.start()
 
@@ -21,7 +23,7 @@ def main():
         # 1. Extract job
         job = extract_greenhouse_job(
             browser,
-            "https://job-boards.greenhouse.io/courierhealth/jobs/5174299007",
+            job_url,
         )
 
         # 2. Load candidate profile and preferences
@@ -307,4 +309,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Evaluate and prepare a Greenhouse application without submitting.")
+    parser.add_argument("job_url", help="URL of a specific Greenhouse job posting")
+    main(parser.parse_args().job_url)

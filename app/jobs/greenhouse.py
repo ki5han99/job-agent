@@ -1,6 +1,26 @@
 from app.browser.client import BrowserClient
 from app.jobs.extractor import extract_job
 from app.jobs.models import Job
+from urllib.parse import urlparse
+
+
+def validate_greenhouse_job_page(requested_url: str, actual_url: str, title: str) -> None:
+    requested = urlparse(requested_url)
+    actual = urlparse(actual_url)
+    requested_path = requested.path.rstrip("/")
+    actual_path = actual.path.rstrip("/")
+    if (
+        "/jobs/" not in requested_path
+        or requested_path != actual_path
+        or requested.hostname != actual.hostname
+        or not title.strip()
+        or title.strip().lower().startswith("current openings")
+    ):
+        raise ValueError(
+            "A specific Greenhouse job page was not found. "
+            "The posting may have expired or redirected. "
+            "Provide a current job URL; scoring and form filling were stopped."
+        )
 
 
 def extract_greenhouse_job(
@@ -30,6 +50,8 @@ def extract_greenhouse_job(
         title = lines[0]
     else:
         title = "Unknown"
+
+    validate_greenhouse_job_page(url, browser.page.url, title)
 
     # Try to get the location from the text immediately
     # after the title.
