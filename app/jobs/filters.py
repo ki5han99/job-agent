@@ -47,7 +47,8 @@ def passes_hard_filters(
         )
     if (
         job.security_clearance_required is True
-        and not preferences.hard_filters.allow_security_clearance_required
+        # This preference controls whether clearance-required jobs are allowed.
+        and not preferences.hard_filters.active_security_clearance_required
     ):
         reasons.append(
             "Job requires a security clearance."
