@@ -272,6 +272,7 @@ def main(job_url: str):
         readiness = build_readiness_report(
             verifications=verifications,
             review_items=review_items,
+            fields=fields,
         )
 
         print()
