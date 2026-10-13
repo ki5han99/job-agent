@@ -10,26 +10,31 @@ class ApplicationReadiness(BaseModel):
     failed_count: int
     status: str
     blocking_items: list[str]
+    optional_review_count: int
+    optional_review_items: list[str]
 
 
 def build_readiness_report(
     verifications: list[FieldVerification],
-    review_items: list[str],
+    review_items: list[FormField],
     fields: list[FormField],
 ) -> ApplicationReadiness:
-    review_items = list(review_items)
     missing_required = []
+    optional_review_items = []
     for index, field in enumerate(fields):
-        if not field.required:
-            continue
         matches = [item for item in verifications if field.field_id and item.field_id == field.field_id]
         unique_id = field.field_id and sum(other.field_id == field.field_id for other in fields) == 1
-        if unique_id and len(matches) == 1 and matches[0].status == "VERIFIED":
+        if (
+            unique_id and len(matches) == 1 and matches[0].status == "VERIFIED"
+            and field not in review_items
+        ):
             continue
-        label = field.label or field.field_id or field.name or f"Unlabeled required field #{index + 1}"
-        missing_required.append(label)
-        if label not in review_items and not matches:
-            review_items.append(label)
+        kind = "required" if field.required else "optional"
+        label = field.label or field.field_id or field.name or f"Unlabeled {kind} field #{index + 1}"
+        if field.required:
+            missing_required.append(label)
+        elif not matches or field in review_items:
+            optional_review_items.append(label)
 
     verified_count = sum(
         1
@@ -45,8 +50,7 @@ def build_readiness_report(
 
     blocking_items = [
         *failed_items,
-        *review_items,
-        *[label for label in missing_required if label not in failed_items and label not in review_items],
+        *[label for label in missing_required if label not in failed_items],
     ]
 
     if failed_items or missing_required or not fields:
@@ -54,16 +58,15 @@ def build_readiness_report(
         if not fields:
             blocking_items.append("No application fields were observed.")
 
-    elif review_items:
-        status = "READY_FOR_HUMAN_REVIEW"
-
     else:
         status = "READY"
 
     return ApplicationReadiness(
         verified_count=verified_count,
-        review_count=len(review_items),
+        review_count=len(missing_required),
         failed_count=len(failed_items),
         status=status,
         blocking_items=blocking_items,
+        optional_review_count=len(optional_review_items),
+        optional_review_items=optional_review_items,
     )

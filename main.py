@@ -183,7 +183,7 @@ def main(job_url: str):
 
             if mapping.status != "READY":
                 review_items.append(
-                    mapping.label
+                    field
                 )
 
                 print(
@@ -194,7 +194,7 @@ def main(job_url: str):
 
             if mapping.value is None:
                 review_items.append(
-                    mapping.label
+                    field
                 )
 
                 print(
@@ -234,7 +234,7 @@ def main(job_url: str):
         for field, answer in generated_answers:
             if answer.confidence != "HIGH":
                 review_items.append(
-                    field.label
+                    field
                 )
 
                 print(
@@ -245,7 +245,7 @@ def main(job_url: str):
 
             if not answer.answer.strip():
                 review_items.append(
-                    field.label
+                    field
                 )
 
                 print(
@@ -283,7 +283,7 @@ def main(job_url: str):
             readiness.verified_count,
         )
         print(
-            "Review required:",
+            "Required fields unresolved:",
             readiness.review_count,
         )
         print(
@@ -301,6 +301,10 @@ def main(job_url: str):
 
             for item in readiness.blocking_items:
                 print("-", item)
+
+        print("Optional fields for review (non-blocking):", readiness.optional_review_count)
+        for item in readiness.optional_review_items:
+            print("-", item)
 
         # 14. Never submit automatically yet
         print()

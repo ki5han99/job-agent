@@ -48,6 +48,36 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(build_readiness_report([], [], []).status, "NOT_READY")
 
     def test_optional_review_does_not_fail_required_coverage(self):
-        report = build_readiness_report([verification()], ["Cover letter"],
+        report = build_readiness_report([verification()], [field("cover", "Cover letter", False)],
                                         [field(), field("cover", "Cover letter", False)])
-        self.assertEqual(report.status, "READY_FOR_HUMAN_REVIEW")
+        self.assertEqual(report.status, "READY")
+        self.assertEqual(report.blocking_items, [])
+        self.assertEqual(report.optional_review_items, ["Cover letter"])
+        self.assertEqual(report.optional_review_count, 1)
+        self.assertEqual(report.review_count, 0)
+
+    def test_optional_demographics_do_not_block(self):
+        demographics = [field("gender", "Gender", False), field("ethnicity", "Ethnicity", False)]
+        report = build_readiness_report([verification()], demographics, [field(), *demographics])
+        self.assertEqual(report.status, "READY")
+        self.assertEqual(report.optional_review_count, 2)
+        self.assertEqual(report.blocking_items, [])
+
+    def test_same_label_does_not_confuse_required_and_optional(self):
+        required = field("required", "Shared label", True)
+        optional = field("optional", "Shared label", False)
+        report = build_readiness_report([], [optional], [required, optional])
+        self.assertEqual(report.status, "NOT_READY")
+        self.assertEqual(report.review_count, 1)
+        self.assertEqual(report.optional_review_count, 1)
+        self.assertIn("Shared label", report.blocking_items)
+
+    def test_optional_verification_failure_still_blocks(self):
+        report = build_readiness_report([verification(status="FAILED")], [], [field(required=False)])
+        self.assertEqual(report.status, "NOT_READY")
+        self.assertEqual(report.failed_count, 1)
+
+    def test_skipped_optional_textarea_is_reported(self):
+        report = build_readiness_report([], [], [field(required=False)])
+        self.assertEqual(report.status, "READY")
+        self.assertEqual(report.optional_review_items, ["Question"])
