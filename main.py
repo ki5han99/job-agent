@@ -1,7 +1,7 @@
 import argparse
 
 from app.browser.client import BrowserClient
-from app.config.loader import load_preferences, load_profile
+from app.config.loader import load_default_test_job_url, load_preferences, load_profile
 from app.jobs.effective_field_mapper import get_effective_mapping
 from app.jobs.filters import passes_hard_filters
 from app.jobs.form_filler import fill_ready_fields
@@ -16,6 +16,7 @@ from app.jobs.scorer import classify_score, score_job
 
 
 def main(job_url: str):
+    print("Job URL:", job_url)
     browser = BrowserClient()
     browser.start()
 
@@ -309,7 +310,20 @@ def main(job_url: str):
         browser.close()
 
 
-if __name__ == "__main__":
+def parse_job_url(argv: list[str] | None = None) -> str:
     parser = argparse.ArgumentParser(description="Evaluate and prepare a Greenhouse application without submitting.")
-    parser.add_argument("job_url", help="URL of a specific Greenhouse job posting")
-    main(parser.parse_args().job_url)
+    parser.add_argument(
+        "job_url", nargs="?",
+        help="Greenhouse job URL (default: default_job in data/test_jobs.yaml)",
+    )
+    args = parser.parse_args(argv)
+    if args.job_url is not None:
+        return args.job_url
+    try:
+        return load_default_test_job_url()
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
+
+
+if __name__ == "__main__":
+    main(parse_job_url())

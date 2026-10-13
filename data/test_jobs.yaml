@@ -1,0 +1,17 @@
+# Change default_job to another key below to choose your usual test posting.
+# Availability checked October 13, 2026; postings can expire.
+default_job: garner_data_engineer
+
+jobs:
+  garner_data_engineer:
+    company: Garner Health
+    title: Data Engineer III
+    url: https://job-boards.greenhouse.io/garnerhealth/jobs/6181548004
+  garner_senior_data_engineer:
+    company: Garner Health
+    title: Senior Data Engineer
+    url: https://job-boards.greenhouse.io/garnerhealth/jobs/6181631004
+  underdog_analytics_engineer:
+    company: Underdog
+    title: Analytics Engineer II, Regulatory Reporting
+    url: https://job-boards.greenhouse.io/underdog/jobs/4727923005

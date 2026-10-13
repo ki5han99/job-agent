@@ -10,7 +10,14 @@ list, not an automated discovery queue.
 | Garner Health | Senior Data Engineer | NYC, three office days per week | https://job-boards.greenhouse.io/garnerhealth/jobs/6181631004 |
 | Underdog | Analytics Engineer II, Regulatory Reporting | United States, remote | https://job-boards.greenhouse.io/underdog/jobs/4727923005 |
 
-Run one job with:
+The code reads `data/test_jobs.yaml`. Set `default_job` to a key in its `jobs`
+mapping to choose the default. Run it with:
+
+```sh
+.venv/bin/python -B main.py
+```
+
+Override the configured default for one run with:
 
 ```sh
 .venv/bin/python -B main.py 'https://job-boards.greenhouse.io/garnerhealth/jobs/6181548004'
