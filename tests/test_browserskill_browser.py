@@ -1,0 +1,245 @@
+import unittest
+from unittest.mock import Mock, patch
+
+from app.browser.browserskill_browser import BrowserSkillBrowser, PAGE_QUERY
+from app.browser.interface import BrowserError, ChoiceRequest, FieldObservation, FieldReadback, SelectionReview
+
+
+class BrowserSkillBrowserTests(unittest.TestCase):
+    def setUp(self):
+        self.client = Mock(session_id='test', tab_id=42)
+        self.browser = BrowserSkillBrowser(self.client)
+        self.field = FieldObservation(label='First Name', field_type='text', name=None,
+                                      field_id='first_name', role=None, required=True)
+        self.page = dict(url='https://example.com/jobs/1', title='Job', heading='Engineer', text='',
+                         fields=[self.field.model_dump()])
+
+    def test_incomplete_observation_stops(self):
+        self.client.evaluate_readonly.return_value = {'fields':[]}
+        with self.assertRaises(BrowserError):
+            self.browser.observe_page()
+
+    def test_attach_checks_url_before_any_fill(self):
+        self.client.evaluate_readonly.return_value = self.page
+        with self.assertRaises(BrowserError):
+            self.browser.attach('test', 42, 'https://example.com/jobs/2')
+        self.client.fill.assert_not_called()
+
+    def test_combobox_fill_is_rejected(self):
+        with self.assertRaises(BrowserError):
+            self.browser.fill_text(self.field.model_copy(update={'role':'combobox'}), 'Yes')
+        self.client.fill.assert_not_called()
+
+    def test_text_fill_preflight_then_readback(self):
+        self.client.evaluate_readonly.side_effect = [self.page, self.page, {'found':True,'value':''}]
+        self.browser.fill_text(self.field, 'Known')
+        self.client.fill.assert_called_once_with('[id="first_name"]', 'Known')
+        self.client.evaluate_readonly.side_effect = [self.page, {'found':True,'value':'Known'}]
+        self.assertEqual(self.browser.read_field(self.field).value, 'Known')
+
+    def test_ambiguous_or_missing_field_is_not_filled(self):
+        self.client.evaluate_readonly.side_effect = [self.page, self.page, {'found':False,'value':None}]
+        with self.assertRaises(BrowserError):
+            self.browser.fill_text(self.field, 'Known')
+        self.client.fill.assert_not_called()
+
+    def test_handoff_never_stops_session(self):
+        self.assertIn('test', self.browser.handoff())
+        self.client.close.assert_not_called()
+
+
+class BrowserSkillObservationFixtureTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from playwright.sync_api import sync_playwright
+        cls.playwright = sync_playwright().start()
+        cls.browser = cls.playwright.chromium.launch(headless=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls.playwright.stop()
+
+    def test_normalized_dom_query_preserves_required_and_optional_fields(self):
+        page = self.browser.new_page()
+        self.addCleanup(page.close)
+        page.set_content('''<h1>Engineer</h1><label for="country">Country*</label>
+            <div class="select-shell"><input id="country" role="combobox" aria-required="true">
+            <input required aria-hidden="true" tabindex="-1"></div>
+            <label for="gender">Gender</label><select id="gender"><option>Unknown</option></select>
+            <input required><input type="submit" value="Submit"><input type="hidden">''')
+        observation = page.evaluate(PAGE_QUERY)
+        fields = observation['fields']
+        self.assertEqual(len(fields), 3)
+        self.assertEqual(fields[0]['field_id'], 'country')
+        self.assertTrue(fields[0]['required'])
+        self.assertEqual(fields[1]['label'], 'Gender')
+        self.assertFalse(fields[1]['required'])
+        self.assertIsNone(fields[2]['field_id'])
+        self.assertTrue(fields[2]['required'])
+
+    def test_readback_uses_committed_selection_not_search_text(self):
+        page = self.browser.new_page()
+        self.addCleanup(page.close)
+        page.set_content('''<label for="auth">Authorization</label><div class="select-shell">
+            <span class="select__single-value">No</span>
+            <input id="auth" role="combobox" aria-expanded="false" value="Yes"></div>''')
+        client = Mock()
+        client.evaluate_readonly.side_effect = page.evaluate
+        browser = BrowserSkillBrowser(client)
+        field = browser.observe_page().fields[0]
+        self.assertEqual(browser.read_field(field).value,'No')
+        page.locator('#auth').evaluate("el => el.setAttribute('aria-expanded','true')")
+        self.assertIsNone(browser.read_field(field).value)
+
+    def test_options_must_belong_to_controlled_listbox(self):
+        page = self.browser.new_page()
+        self.addCleanup(page.close)
+        page.set_content('''<label for="auth">Authorization</label><div class="select-shell">
+            <input id="auth" role="combobox" aria-expanded="true" aria-controls="owned"></div>
+            <div id="other" role="listbox"><div id="wrong" role="option">Yes</div></div>
+            <div id="owned" role="listbox"><div id="right" role="option">No</div></div>''')
+        client = Mock()
+        client.evaluate_readonly.side_effect = page.evaluate
+        browser = BrowserSkillBrowser(client)
+        options = browser._combo_state(browser.observe_page().fields[0])['options']
+        self.assertEqual([option['id'] for option in options],['right'])
+
+
+class ComboboxSelectionTests(unittest.TestCase):
+    def setUp(self):
+        self.client = Mock()
+        self.browser = BrowserSkillBrowser(self.client)
+        self.field = FieldObservation(label='Authorization',field_type='text',name=None,
+                                      field_id='observed',role='combobox',required=True)
+        self.choice = ChoiceRequest(search='Yes',labels=['Yes'])
+        self.option = dict(id='option1',label='Yes',country_code=None,unique=True,disabled=False,listbox_id='owned')
+
+    def state(self, options):
+        return {'found':True,'options':options}
+
+    def test_unique_option_click_and_committed_readback(self):
+        self.browser.read_field = Mock(side_effect=[FieldReadback(found=True,value=None),FieldReadback(found=True,value='Yes')])
+        self.browser._combo_state = Mock(return_value=self.state([self.option]))
+        result = self.browser.select_choice(self.field,self.choice)
+        self.assertEqual(result.value,'Yes')
+        self.assertEqual(self.client.click.call_count,2)
+        self.assertIn('[role="option"]',self.client.click.call_args.args[0])
+        self.client.fill.assert_not_called()
+
+    def test_ambiguous_options_never_click_option(self):
+        self.browser.read_field = Mock(return_value=FieldReadback(found=True,value=None))
+        self.browser._combo_state = Mock(return_value=self.state([self.option,self.option | {'id':'option2'}]))
+        with self.assertRaises(SelectionReview):
+            self.browser.select_choice(self.field,self.choice)
+        self.assertEqual(self.client.click.call_count,1)
+
+    def test_missing_options_poll_readonly_then_review(self):
+        self.browser.read_field = Mock(return_value=FieldReadback(found=True,value=None))
+        self.browser._combo_state = Mock(return_value=self.state([]))
+        with patch('app.browser.browserskill_browser.time.sleep'):
+            with self.assertRaises(SelectionReview):
+                self.browser.select_choice(self.field,self.choice)
+        self.client.fill.assert_called_once()
+        self.assertEqual(self.client.click.call_count,1)
+
+    def test_async_options_are_selected_after_observation(self):
+        self.browser.read_field = Mock(side_effect=[FieldReadback(found=True,value=None),FieldReadback(found=True,value='Yes')])
+        self.browser._combo_state = Mock(side_effect=[self.state([]),self.state([]),self.state([self.option]),self.state([self.option])])
+        with patch('app.browser.browserskill_browser.time.sleep'):
+            self.browser.select_choice(self.field,self.choice)
+        self.client.fill.assert_called_once()
+
+    def test_mismatched_readback_is_not_verified(self):
+        self.browser.read_field = Mock(return_value=FieldReadback(found=True,value='No'))
+        self.browser._combo_state = Mock(return_value=self.state([self.option]))
+        with patch('app.browser.browserskill_browser.time.sleep'):
+            with self.assertRaises(SelectionReview):
+                self.browser.select_choice(self.field,self.choice)
+
+    def test_commit_landing_after_polling_window_is_still_verified(self):
+        self.browser.read_field = Mock(side_effect=[FieldReadback(found=True, value=None)] + [
+            FieldReadback(found=True, value='No')] * 24 + [FieldReadback(found=True, value=self.choice.labels[0])])
+        self.browser._combo_state = Mock(return_value=self.state([self.option]))
+        with patch('app.browser.browserskill_browser.time.sleep'):
+            got = self.browser.select_choice(self.field, self.choice)
+        self.assertEqual(got.value, self.choice.labels[0])
+
+    def test_stale_option_does_not_get_clicked(self):
+        self.browser.read_field = Mock(return_value=FieldReadback(found=True,value=None))
+        self.browser._combo_state = Mock(side_effect=[self.state([self.option]),self.state([self.option]),self.state([])])
+        with self.assertRaises(SelectionReview):
+            self.browser.select_choice(self.field,self.choice)
+        self.assertEqual(self.client.click.call_count,1)
+
+    def test_phone_country_requires_country_identity_not_calling_code(self):
+        choice = ChoiceRequest(search='United States',labels=['United States'],country_code='us')
+        self.assertFalse(self.browser._matches(choice,'+1','ca'))
+        self.assertFalse(self.browser._matches(choice,'+1',None))
+        self.assertTrue(self.browser._matches(choice,'+1','us'))
+
+
+class FileUploadTests(unittest.TestCase):
+    def setUp(self):
+        self.client = Mock(session_id='test', tab_id=42)
+        self.browser = BrowserSkillBrowser(self.client)
+        self.field = FieldObservation(label='Resume/CV*', field_type='file', name=None,
+                                      field_id='resume', role=None, required=True)
+        self.page = dict(url='https://example.com/jobs/1', title='Job', heading='Engineer', text='',
+                         fields=[self.field.model_dump()])
+        import tempfile, os
+        handle, self.path = tempfile.mkstemp(suffix='.pdf')
+        os.close(handle)
+        self.addCleanup(os.unlink, self.path)
+
+    def test_page_query_uses_upload_group_label_and_required(self):
+        self.assertIn("closest('[role=\"group\"][aria-labelledby]')", PAGE_QUERY)
+        self.assertIn("group?.getAttribute('aria-required')", PAGE_QUERY)
+
+    def test_upload_targets_only_the_attach_button(self):
+        self.client.evaluate_readonly.side_effect = [self.page, {'count': 1, 'text': 'Attach', 'inputs': 1}]
+        self.browser.upload_file(self.field, self.path)
+        selector, sent = self.client.upload.call_args.args
+        self.assertEqual(selector, 'div:has(> input[id="resume"][type="file"]) > button')
+        self.assertEqual(sent, self.path)
+
+    def test_non_attach_or_ambiguous_trigger_is_not_used(self):
+        for info in ({'count': 4, 'text': 'Attach', 'inputs': 1}, {'count': 1, 'text': 'Dropbox', 'inputs': 1},
+                     {'count': 1, 'text': 'Attach', 'inputs': 2}):
+            self.client.evaluate_readonly.side_effect = [self.page, info]
+            with self.assertRaises(SelectionReview):
+                self.browser.upload_file(self.field, self.path)
+        self.client.upload.assert_not_called()
+
+    def test_missing_relative_or_changed_inputs_never_upload(self):
+        with self.assertRaises(BrowserError):
+            self.browser.upload_file(self.field, 'relative/resume.pdf')
+        with self.assertRaises(BrowserError):
+            self.browser.upload_file(self.field, '/does/not/exist.pdf')
+        self.client.evaluate_readonly.return_value = dict(self.page, fields=[])
+        with self.assertRaises(BrowserError):
+            self.browser.upload_file(self.field, self.path)
+        self.client.upload.assert_not_called()
+
+    def test_text_field_is_not_a_file_field(self):
+        text = self.field.model_copy(update={'field_type': 'text'})
+        self.client.evaluate_readonly.return_value = dict(self.page, fields=[text.model_dump()])
+        with self.assertRaises(SelectionReview):
+            self.browser.upload_file(text, self.path)
+
+    def test_readback_from_input_files_and_ui_text(self):
+        self.client.evaluate_readonly.return_value = {'found': True, 'filenames': ['resume.pdf'], 'text': 'x'}
+        got = self.browser.read_file(self.field, 'resume.pdf')
+        self.assertEqual((got.found, got.filenames, got.shown_in_ui), (True, ['resume.pdf'], False))
+        self.client.evaluate_readonly.return_value = {'found': True, 'filenames': [], 'text': 'Resume/CV*\nresume.pdf\nRemove'}
+        self.assertTrue(self.browser.read_file(self.field, 'resume.pdf').shown_in_ui)
+
+    def test_empty_chooser_is_not_attached(self):
+        self.client.evaluate_readonly.return_value = {'found': True, 'filenames': [], 'text': 'Resume/CV*\nAttach'}
+        got = self.browser.read_file(self.field, 'resume.pdf')
+        self.assertEqual((got.filenames, got.shown_in_ui), ([], False))
+
+    def test_invalid_readback_stops(self):
+        self.client.evaluate_readonly.return_value = 'nope'
+        with self.assertRaises(BrowserError):
+            self.browser.read_file(self.field, 'resume.pdf')

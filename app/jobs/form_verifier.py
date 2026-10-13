@@ -273,24 +273,84 @@ def verify_field(
             status=status,
         )
 
-    # -------------------------------------------------
-    # Standard input / textarea
-    # -------------------------------------------------
-    try:
-        actual_value = (
-            element
-            .input_value()
-            .strip()
-        )
+    if field.field_type == "select":
+        try:
+            actual_value = (
+                element
+                .locator("option:checked")
+                .inner_text()
+                .strip()
+            )
 
-    except Exception:
-        return FieldVerification(
-            field_id=field.field_id,
-            label=field.label,
-            expected_value=expected_value,
-            actual_value=None,
-            status="UNVERIFIED",
-        )
+        except Exception:
+            return FieldVerification(
+                field_id=field.field_id,
+                label=field.label,
+                expected_value=expected_value,
+                actual_value=None,
+                status="UNVERIFIED",
+            )
+
+    elif field.role == "combobox":
+        try:
+            tag_name = element.evaluate(
+                "(el) => el.tagName.toLowerCase()"
+            )
+
+            if tag_name == "input":
+                actual_value = (
+                    element
+                    .input_value()
+                    .strip()
+                )
+            else:
+                selected_value = element.locator(
+                    "xpath=../.."
+                ).locator(
+                    ".select__single-value"
+                )
+
+                if selected_value.count() > 0:
+                    actual_value = (
+                        selected_value
+                        .inner_text()
+                        .strip()
+                    )
+                else:
+                    actual_value = (
+                        element
+                        .inner_text()
+                        .strip()
+                    )
+
+        except Exception:
+            return FieldVerification(
+                field_id=field.field_id,
+                label=field.label,
+                expected_value=expected_value,
+                actual_value=None,
+                status="UNVERIFIED",
+            )
+
+    else:
+        # -------------------------------------------------
+        # Standard input / textarea
+        # -------------------------------------------------
+        try:
+            actual_value = (
+                element
+                .input_value()
+                .strip()
+            )
+
+        except Exception:
+            return FieldVerification(
+                field_id=field.field_id,
+                label=field.label,
+                expected_value=expected_value,
+                actual_value=None,
+                status="UNVERIFIED",
+            )
 
     status = (
         "VERIFIED"

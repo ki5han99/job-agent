@@ -15,7 +15,7 @@ from app.jobs.readiness import build_readiness_report
 from app.jobs.scorer import classify_score, score_job
 
 
-def main(job_url: str):
+def run_playwright(job_url: str):
     print("Job URL:", job_url)
     browser = BrowserClient()
     browser.start()
@@ -314,20 +314,43 @@ def main(job_url: str):
         browser.close()
 
 
-def parse_job_url(argv: list[str] | None = None) -> str:
+def main(job_url: str, browser_backend: str = "browserskill", session_id=None, tab_id=None):
+    if browser_backend == "playwright":
+        return run_playwright(job_url)
+    from app.browser.browserskill_browser import BrowserSkillBrowser
+    from app.jobs.browserskill_greenhouse import run_greenhouse
+    print("Browser: BrowserSkill (primary)")
+    print("Job URL:", job_url)
+    return run_greenhouse(BrowserSkillBrowser(), job_url, session_id, tab_id)
+
+
+def parse_options(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description="Evaluate and prepare a Greenhouse application without submitting.")
     parser.add_argument(
         "job_url", nargs="?",
         help="Greenhouse job URL (default: default_job in data/test_jobs.yaml)",
     )
+    parser.add_argument("--browser", choices=["browserskill", "playwright"], default="browserskill")
+    parser.add_argument("--session", help="Explicit BrowserSkill session to reattach")
+    parser.add_argument("--tab-id", type=int, help="Agent tab belonging to --session")
     args = parser.parse_args(argv)
+    if bool(args.session) != (args.tab_id is not None):
+        parser.error("--session and --tab-id must be provided together")
+    if args.browser == "playwright" and args.session:
+        parser.error("--session/--tab-id are only supported with BrowserSkill")
     if args.job_url is not None:
-        return args.job_url
+        return args
     try:
-        return load_default_test_job_url()
+        args.job_url = load_default_test_job_url()
     except (OSError, ValueError) as error:
         parser.error(str(error))
+    return args
+
+
+def parse_job_url(argv: list[str] | None = None) -> str:
+    return parse_options(argv).job_url
 
 
 if __name__ == "__main__":
-    main(parse_job_url())
+    options = parse_options()
+    main(options.job_url, options.browser, options.session, options.tab_id)

@@ -4,16 +4,25 @@ from app.jobs.models import Job
 from urllib.parse import urlparse
 
 
+GREENHOUSE_JOB_HOSTS = {
+    "boards.greenhouse.io",
+    "job-boards.greenhouse.io",
+}
+
+
 def validate_greenhouse_job_page(requested_url: str, actual_url: str, title: str) -> None:
     requested = urlparse(requested_url)
     actual = urlparse(actual_url)
     requested_path = requested.path.rstrip("/")
     actual_path = actual.path.rstrip("/")
     if (
-        "/jobs/" not in requested_path
+        requested.hostname not in GREENHOUSE_JOB_HOSTS
+        or actual.hostname not in GREENHOUSE_JOB_HOSTS
+        or "/jobs/" not in requested_path
         or requested_path != actual_path
         or requested.hostname != actual.hostname
         or not title.strip()
+        or title.strip().lower() == "unknown"
         or title.strip().lower().startswith("current openings")
     ):
         raise ValueError(

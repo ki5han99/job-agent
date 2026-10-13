@@ -28,6 +28,7 @@ class Links(BaseModel):
 class WorkAuthorization(BaseModel):
     authorized_to_work_us: bool | None
     requires_sponsorship: bool | None
+    requires_sponsorship_now_or_in_future: bool | None = None
     authorization_type: str
 
 
@@ -77,6 +78,18 @@ class Profile(BaseModel):
     experience: list[Experience]
     projects: list[Project]
     skills: Skills
+
+
+class TestJobConfig(BaseModel):
+    company: str
+    title: str
+    url: str
+
+
+class TestJobsConfig(BaseModel):
+    default_job: str
+    jobs: dict[str, TestJobConfig]
+
 
 class WorkArrangements(BaseModel):
     remote: bool

@@ -7,24 +7,58 @@ from main import parse_job_url
 
 class JobSelectionTests(unittest.TestCase):
     def test_no_argument_reads_yaml_default(self):
-        with patch("app.config.loader.load_yaml", return_value={
-            "default_job": "chosen",
-            "jobs": {"chosen": {"url": "https://example.com/jobs/123"}},
-        }):
+        with patch(
+            "app.config.loader.yaml.safe_load",
+            return_value={
+                "default_job": "chosen",
+                "jobs": {
+                    "chosen": {
+                        "company": "Example",
+                        "title": "Test role",
+                        "url": "https://example.com/jobs/123",
+                    },
+                },
+            },
+        ):
             self.assertEqual(parse_job_url([]), "https://example.com/jobs/123")
 
     def test_explicit_url_does_not_read_default(self):
-        with patch("main.load_default_test_job_url", side_effect=AssertionError("Unexpected config read")):
-            self.assertEqual(parse_job_url(["https://example.com/jobs/456"]), "https://example.com/jobs/456")
+        with patch(
+            "main.load_default_test_job_url",
+            side_effect=AssertionError("Unexpected config read"),
+        ):
+            self.assertEqual(
+                parse_job_url(["https://example.com/jobs/456"]),
+                "https://example.com/jobs/456",
+            )
 
     def test_missing_default_or_url_is_rejected(self):
-        for config in (None, {}, {"default_job": "missing", "jobs": {}},
-                       {"default_job": "chosen", "jobs": {"chosen": {"url": " "}}}):
+        configs = (
+            None,
+            {},
+            {"default_job": "missing", "jobs": {}},
+            {
+                "default_job": "chosen",
+                "jobs": {
+                    "chosen": {
+                        "company": "Example",
+                        "title": "Test role",
+                        "url": " ",
+                    },
+                },
+            },
+        )
+        for config in configs:
             with self.subTest(config=config):
-                with patch("app.config.loader.load_yaml", return_value=config):
+                with patch(
+                    "app.config.loader.yaml.safe_load",
+                    return_value=config,
+                ):
                     with self.assertRaises(ValueError):
                         load_default_test_job_url()
 
     def test_repository_config_selects_garner(self):
-        self.assertEqual(load_default_test_job_url(),
-                         "https://job-boards.greenhouse.io/garnerhealth/jobs/6181548004")
+        self.assertEqual(
+            load_default_test_job_url(),
+            "https://job-boards.greenhouse.io/garnerhealth/jobs/6181548004",
+        )
