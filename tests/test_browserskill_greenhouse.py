@@ -5,7 +5,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from app.browser.interface import BrowserError, FieldObservation, FieldReadback, FileReadback, PageObservation
-from app.jobs.browserskill_greenhouse import run_greenhouse
+from app.jobs.answer_engine import GeneratedAnswer
+from app.jobs.browserskill_greenhouse import UNSUPPORTED_PERSONAL_CLAIMS, run_greenhouse
 
 
 class BrowserSkillGreenhouseTests(unittest.TestCase):
@@ -16,7 +17,7 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
         data.update(changes)
         return FieldObservation(**data)
 
-    def run_flow(self, fields, *, hard_pass=True, score=92, actual='Known', error=None, file_readback=None, upload_error=None):
+    def run_flow(self, fields, *, hard_pass=True, score=92, actual='Known', error=None, file_readback=None, upload_error=None, draft=None, mapping=None):
         browser = Mock()
         browser.observe_page.return_value = PageObservation(url=self.url,
             title='Job Application for Engineer at Example', heading='Engineer', text='Engineer\nRemote', fields=fields)
@@ -35,7 +36,8 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
                 ('load_profile', Mock()), ('load_preferences', preferences),
                 ('passes_hard_filters', SimpleNamespace(passed=hard_pass,reasons=[])),
                 ('score_job', SimpleNamespace(overall_score=score,explanation='Test')),
-                ('get_effective_mapping', SimpleNamespace(status='READY',value='Known')),
+                ('get_effective_mapping', mapping or SimpleNamespace(status='READY',value='Known')),
+                ('generate_application_answer', draft or GeneratedAnswer(answer='', confidence='LOW')),
             ]:
                 stack.enter_context(patch(prefix + name, return_value=result))
             try:
@@ -131,6 +133,50 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
         self.assertEqual(self.browser.upload_file.call_count, 1)
         self.assertEqual(report.status, 'READY')
         self.assertEqual(report.optional_review_items, ['Cover Letter'])
+
+    essay = lambda self: self.field('question_1', 'Tell us about your relationship with sports?', field_type='textarea')
+    unmapped = SimpleNamespace(status='REVIEW', value=None)
+
+    def test_grounded_high_confidence_essay_is_filled_and_verified(self):
+        text = 'This role aligns with my experience building regulatory reporting pipelines.'
+        report = self.run_flow([self.essay()], actual=text, mapping=self.unmapped,
+                               draft=GeneratedAnswer(answer=text, confidence='HIGH'))
+        self.browser.fill_text.assert_called_once()
+        self.assertEqual(self.browser.fill_text.call_args.args[1], text)
+        self.assertEqual(report.verified_count, 1)
+
+    def test_essay_readback_mismatch_is_failed(self):
+        report = self.run_flow([self.essay()], actual='different', mapping=self.unmapped,
+                               draft=GeneratedAnswer(answer='A safe answer.', confidence='HIGH'))
+        self.assertEqual(report.failed_count, 1)
+        self.assertEqual(report.status, 'NOT_READY')
+
+    def test_low_or_medium_confidence_essay_is_not_filled(self):
+        for confidence in ('LOW', 'MEDIUM'):
+            with self.subTest(confidence=confidence):
+                report = self.run_flow([self.essay()], mapping=self.unmapped,
+                                       draft=GeneratedAnswer(answer='Something.', confidence=confidence))
+                self.browser.fill_text.assert_not_called()
+                self.assertEqual(report.status, 'NOT_READY')
+
+    def test_draft_with_invented_personal_claims_is_discarded(self):
+        for claim in ("I am a huge fan of the sport.", "I play basketball every weekend.",
+                      "As an Underdog user I love it.", "Growing up I watched games.", "My favorite team wins."):
+            with self.subTest(claim=claim):
+                self.run_flow([self.essay()], mapping=self.unmapped,
+                              draft=GeneratedAnswer(answer=claim, confidence='HIGH'))
+                self.browser.fill_text.assert_not_called()
+
+    def test_claim_filter_allows_grounded_alignment_language(self):
+        for ok in ("This role aligns with my experience in Python and dbt.",
+                   "I am interested in the opportunity to build reporting pipelines.",
+                   "My background in AWS data engineering aligns with the team's needs."):
+            self.assertIsNone(UNSUPPORTED_PERSONAL_CLAIMS.search(ok), ok)
+
+    def test_non_textarea_unmapped_fields_never_get_generated_answers(self):
+        self.run_flow([self.field('q', 'Why us?')], mapping=self.unmapped,
+                      draft=GeneratedAnswer(answer='Fine answer.', confidence='HIGH'))
+        self.browser.fill_text.assert_not_called()
 
     def test_submit_is_never_clicked(self):
         self.run_flow([self.resume()], file_readback=FileReadback(found=True, filenames=['resume.pdf']))

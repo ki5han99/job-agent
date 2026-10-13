@@ -37,6 +37,18 @@ class BrowserSkillBrowserTests(unittest.TestCase):
         self.client.evaluate_readonly.side_effect = [self.page, {'found':True,'value':'Known'}]
         self.assertEqual(self.browser.read_field(self.field).value, 'Known')
 
+    def test_textarea_is_fillable_and_readable(self):
+        area = FieldObservation(label='Essay', field_type='textarea', name=None, field_id='q1', role=None, required=True)
+        page = dict(self.page, fields=[area.model_dump()])
+        self.client.evaluate_readonly.side_effect = [page, page, {'found': True, 'value': ''}]
+        self.browser.fill_text(area, 'hi')
+        self.client.fill.assert_called_once_with('[id="q1"]', 'hi')
+        self.client.evaluate_readonly.side_effect = [page, {'found': True, 'value': 'hi'}]
+        self.assertEqual(self.browser.read_field(area).value, 'hi')
+        # the readback JS must accept TEXTAREA elements, not just INPUT
+        query = self.client.evaluate_readonly.call_args_list[-1].args[0]
+        self.assertIn("el.tagName === 'TEXTAREA'", query)
+
     def test_ambiguous_or_missing_field_is_not_filled(self):
         self.client.evaluate_readonly.side_effect = [self.page, self.page, {'found':False,'value':None}]
         with self.assertRaises(BrowserError):
@@ -177,6 +189,37 @@ class ComboboxSelectionTests(unittest.TestCase):
         self.assertFalse(self.browser._matches(choice,'+1','ca'))
         self.assertFalse(self.browser._matches(choice,'+1',None))
         self.assertTrue(self.browser._matches(choice,'+1','us'))
+
+    def test_country_option_is_clicked_by_flag_identity(self):
+        choice = ChoiceRequest(search='United States', labels=['United States'], country_code='us')
+        option = dict(self.option, id='react-select-country-option-0', label='United States +1', country_code='us')
+        self.browser.read_field = Mock(side_effect=[FieldReadback(found=True, value=None)] +
+                                       [FieldReadback(found=True, value='+1', country_code='us')])
+        self.browser._combo_state = Mock(return_value=self.state([option]))
+        self.browser.select_choice(self.field, choice)
+        selector = self.client.click.call_args.args[0]
+        self.assertTrue(selector.endswith(':has(.iti__flag.iti__us)'), selector)
+
+    def test_wrong_committed_value_is_reselected_exactly_once(self):
+        wrong = FieldReadback(found=True, value='No')
+        self.browser.read_field = Mock(side_effect=[FieldReadback(found=True, value=None)] + [wrong] * 25 + [
+            wrong, FieldReadback(found=True, value='Yes')] )
+        self.browser._combo_state = Mock(return_value=dict(self.state([self.option]), selected='No'))
+        # first attempt: wrong value committed -> one retry that succeeds
+        with patch('app.browser.browserskill_browser.time.sleep'):
+            got = self.browser.select_choice(self.field, self.choice)
+        self.assertEqual(got.value, 'Yes')
+        option_clicks = [c for c in self.client.click.call_args_list if 'option' in c.args[0]]
+        self.assertEqual(len(option_clicks), 2)
+
+    def test_uncommitted_failure_is_not_retried(self):
+        self.browser.read_field = Mock(return_value=FieldReadback(found=True, value=None))
+        self.browser._combo_state = Mock(return_value=dict(self.state([self.option]), selected=None))
+        with patch('app.browser.browserskill_browser.time.sleep'):
+            with self.assertRaises(SelectionReview):
+                self.browser.select_choice(self.field, self.choice)
+        option_clicks = [c for c in self.client.click.call_args_list if 'option' in c.args[0]]
+        self.assertEqual(len(option_clicks), 1)
 
 
 class FileUploadTests(unittest.TestCase):

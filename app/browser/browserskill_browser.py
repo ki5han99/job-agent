@@ -74,8 +74,9 @@ class BrowserSkillBrowser:
             const matches = Array.from(document.querySelectorAll('[id]')).filter(el => el.id === FIELD_ID);
             if (matches.length !== 1) return {found:false,value:null};
             const el = matches[0];
-            if (location.href !== EXPECTED_URL || !['INPUT'].includes(el.tagName) ||
-                !['text','email','tel'].includes(el.type) || el.getAttribute('role') === 'combobox' ||
+            const textual = (el.tagName === 'INPUT' && ['text','email','tel'].includes(el.type)) ||
+                el.tagName === 'TEXTAREA';
+            if (location.href !== EXPECTED_URL || !textual || el.getAttribute('role') === 'combobox' ||
                 !el.getClientRects().length || el.disabled || el.readOnly)
                 return {found:false,value:null};
             return {found:true,value:el.value};
@@ -86,8 +87,8 @@ class BrowserSkillBrowser:
             raise BrowserError("Invalid field readback.") from error
 
     def fill_text(self, field: FieldObservation, value: str) -> None:
-        if field.role == "combobox" or field.field_type not in {"text", "email", "tel"}:
-            raise BrowserError("Unsupported action in the simple-text migration slice.")
+        if field.role == "combobox" or field.field_type not in {"text", "email", "tel", "textarea"}:
+            raise BrowserError("Unsupported action: not a plain text field.")
         if field not in self.observe_page().fields:
             raise BrowserError("Field label or metadata changed; re-plan before filling.")
         if not self._query_field(field).found:
@@ -146,6 +147,16 @@ class BrowserSkillBrowser:
         return bool(normalized) and normalized in {" ".join(x.casefold().split()) for x in choice.labels}
 
     def select_choice(self, field: FieldObservation, choice: ChoiceRequest) -> FieldReadback:
+        try:
+            return self._select_choice_once(field, choice)
+        except SelectionReview as error:
+            if not getattr(error, "wrong_value_committed", False):
+                raise
+        # A different value was committed (option list re-ordered under the click).
+        # Re-selecting is idempotent and verified again; never retried more than once.
+        return self._select_choice_once(field, choice)
+
+    def _select_choice_once(self, field: FieldObservation, choice: ChoiceRequest) -> FieldReadback:
         if field.role != "combobox" or not choice.search.strip() or not choice.labels:
             raise SelectionReview("No supported approved combobox target.")
         current = self.read_field(field)
@@ -180,6 +191,10 @@ class BrowserSkillBrowser:
             raise SelectionReview("Option changed before selection; no option was clicked.")
         selector = ('[id=' + json.dumps(option['listbox_id']) + '] [role="option"][id='
                     + json.dumps(option['id']) + ']')
+        if choice.country_code:
+            # Address the option by flag identity, not list position, so a re-ordered list
+            # cannot redirect the click to another country.
+            selector += ':has(.iti__flag.iti__' + choice.country_code + ')'
         self.client.click(selector)
         for attempt in range(24):
             actual = self.read_field(field)
@@ -191,11 +206,13 @@ class BrowserSkillBrowser:
         if last.found and self._matches(choice, last.value, last.country_code):
             return last
         last = self._combo_state(field)
-        raise SelectionReview(
+        error = SelectionReview(
             "Selection was attempted but committed value did not verify "
             f"(expanded={last.get('expanded')}, shown_values={last.get('nshown')}, "
             f"listboxes={last.get('listboxes')}, selected={last.get('selected')!r}, "
             f"code={last.get('country_code')!r}).")
+        error.wrong_value_committed = last.get("selected") is not None
+        raise error
 
     def _file_trigger(self, field: FieldObservation) -> str:
         """Selector of the single 'Attach' button sharing a wrapper with the file input."""

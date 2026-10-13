@@ -1,9 +1,12 @@
 """BrowserSkill Greenhouse workflow; unsupported or unapproved fields remain for review."""
+import re
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from app.browser.interface import Browser, BrowserError, ChoiceRequest, SelectionReview
 from app.config.loader import load_preferences, load_profile
+from app.jobs.answer_engine import generate_application_answer
 from app.jobs.effective_field_mapper import get_effective_mapping
 from app.jobs.extractor import extract_job
 from app.jobs.filters import passes_hard_filters
@@ -56,6 +59,31 @@ def permitted_text(field: FormField) -> bool:
     }
     return (label in labels.get(field.field_id, set()) or label == "linkedin profile"
             or approved_sensitive_intent(field.label) == "DESIRED_SALARY")
+
+
+# Personal-affinity claims the candidate profile can never support; a draft
+# containing one is discarded and the question stays for the human.
+UNSUPPORTED_PERSONAL_CLAIMS = re.compile(
+    r"\bI(?:'m| am) (?:a |an )?(?:big |huge |avid |die-?hard |lifelong )?(?:fan|athlete|player|user|customer|member)\b"
+    r"|\bI(?:'ve| have)? (?:always )?(?:played|follow(?:ed)?|watch(?:ed)?|use[ds]?|bet|wagered)\b"
+    r"|\bI (?:play|follow|watch|use|love|enjoy)\b|\bmy (?:favorite|favourite)\b|\bgrowing up\b"
+    r"|\bsince I was\b|\bmy (?:friends|family|colleagues)\b", re.IGNORECASE)
+
+
+def is_open_ended_field(field: FormField) -> bool:
+    return field.field_type == "textarea" and bool(field.label.strip()) and bool(field.field_id)
+
+
+def grounded_answer(field: FormField, profile, job) -> str | None:
+    """Draft via the grounded answer engine; None unless HIGH confidence and claim-free."""
+    answer = generate_application_answer(question=field.label, profile=profile, job=job)
+    text = answer.answer.strip()
+    if answer.confidence != "HIGH" or not text:
+        return None
+    if UNSUPPORTED_PERSONAL_CLAIMS.search(text):
+        print(field.label[:60], "→ REVIEW: draft made unsupported personal claims; discarded")
+        return None
+    return text
 
 
 RESUME_PATH = Path(__file__).resolve().parents[2] / "data" / "resume.pdf"
@@ -124,7 +152,7 @@ def run_greenhouse(browser: Browser, job_url: str, session_id=None, tab_id=None)
         # Re-observe after LLM calls: never act on a stale page or field list.
         observed = browser.observe_page()
         fields = [FormField.model_validate(item.model_dump()) for item in observed.fields]
-        verifications, reviews = [], []
+        verifications, reviews, generated = [], [], []
         for observation, field in zip(observed.fields, fields):
             mapping = get_effective_mapping(field, profile, preferences)
             unique_id = field.field_id and sum(f.field_id == field.field_id for f in fields) == 1
@@ -155,7 +183,19 @@ def run_greenhouse(browser: Browser, job_url: str, session_id=None, tab_id=None)
                 ))
                 print(field.label, "→", verifications[-1].status, "(selected value)")
                 continue
-            if (not unique_id or not permitted_text(field) or mapping.status != "READY"
+            if unique_id and is_open_ended_field(field) and mapping.status != "READY":
+                draft = grounded_answer(field, profile, job)
+                if draft is not None:
+                    generated.append((field.label, draft))
+                    mapping = SimpleNamespace(status="READY", value=draft)
+                    open_ended = True
+                else:
+                    reviews.append(field)
+                    print(field.label[:60], "→ REVIEW (no safe grounded answer)")
+                    continue
+            else:
+                open_ended = False
+            if (not unique_id or not (open_ended or permitted_text(field)) or mapping.status != "READY"
                     or not mapping.value or not mapping.value.strip()):
                 reviews.append(field)
                 print(field.label or field.field_id or "Unnamed field", "→ REVIEW")
@@ -186,6 +226,8 @@ def run_greenhouse(browser: Browser, job_url: str, session_id=None, tab_id=None)
         print("Verified:", report.verified_count, "Required unresolved:", report.review_count)
         print("Blocking items:", report.blocking_items)
         print("Optional review:", report.optional_review_items)
+        for label, text in generated:
+            print("GENERATED ANSWER (review before submitting):", label[:70], "→", text)
         return report
     finally:
         # Handoff deliberately does not call stop/close or replay browser actions.
