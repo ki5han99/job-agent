@@ -114,3 +114,14 @@ class ApprovedAnswerTests(ReviewResolverTests):
         self.assertIsNone(approved_choice(self.field('What is your desired salary?'), self.profile))
         self.profile.approved_answers = ApprovedAnswers()
         self.assertIsNone(approved_choice(self.field(self.NYC), self.profile))
+
+
+class StateNameTests(ReviewResolverTests):
+    def test_state_abbreviations_expand_to_full_names(self):
+        for abbreviation, name in (('WA', 'Washington'), ('CA', 'California'), ('NY', 'New York')):
+            with self.subTest(state=abbreviation):
+                self.profile.location.state = abbreviation
+                choice = approved_choice(self.field('Which state do you currently reside in?*'), self.profile)
+                self.assertEqual(choice.search, name)
+                city = approved_choice(self.field('Location (City)*'), self.profile)
+                self.assertIn(f'Palo Alto, {name}, United States', city.labels)

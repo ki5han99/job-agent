@@ -43,3 +43,9 @@ def load_default_test_job_url() -> str:
             f"Default test job {config.default_job!r} has no URL in data/test_jobs.yaml."
         )
     return job.url.strip()
+
+
+def load_test_job_urls() -> list[str]:
+    path = Path(__file__).resolve().parents[2] / "data" / "test_jobs.yaml"
+    config = load_yaml(path, TestJobsConfig)
+    return [job.url.strip() for job in config.jobs.values() if job.url.strip()]

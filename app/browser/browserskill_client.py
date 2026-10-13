@@ -88,6 +88,9 @@ class BrowserSkillClient:
         """Deliver a local file through the page's own file chooser trigger."""
         self._json(["bsk", "upload", "--selector", selector, "--file", path, *self._target()])
 
+    def press(self, key: str, selector: str) -> None:
+        self._json(["bsk", "press", key, "--selector", selector, *self._target()])
+
     def start(self) -> None:
         if self.session_id is not None:
             raise RuntimeError(

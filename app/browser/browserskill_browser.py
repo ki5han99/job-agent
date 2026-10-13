@@ -1,5 +1,6 @@
 """BrowserSkill output is translated here, never in application policy."""
 import json
+import re
 import time
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from pydantic import ValidationError
 from app.browser.browserskill_client import BrowserSkillClient
 from app.browser.interface import (
     BrowserError, ChoiceRequest, FieldObservation, FieldReadback, FileReadback, PageObservation,
-    SelectionReview,
+    SelectionReview, SubmitOutcome,
 )
 
 
@@ -146,15 +147,31 @@ class BrowserSkillBrowser:
         normalized = " ".join((label or "").casefold().split())
         return bool(normalized) and normalized in {" ".join(x.casefold().split()) for x in choice.labels}
 
+    def _candidates(self, state: dict, choice: ChoiceRequest) -> list[dict]:
+        options = [o for o in state['options'] if self._matches(choice, o.get('label'), o.get('country_code'))]
+        if (len(options) > 1 and choice.identical_duplicates_ok and not any(o.get('disabled') for o in options)
+                and len({" ".join((o.get('label') or "").casefold().split()) for o in options}) == 1
+                and all(o.get('unique') for o in options)):
+            return options[:1]  # indistinguishable rows: the first is as good as any
+        return options
+
     def select_choice(self, field: FieldObservation, choice: ChoiceRequest) -> FieldReadback:
         try:
+            try:
+                return self._select_choice_once(field, choice)
+            except SelectionReview as error:
+                if not getattr(error, "wrong_value_committed", False):
+                    raise
+            # A different value was committed (option list re-ordered under the click).
+            # Re-selecting is idempotent and verified again; never retried more than once.
             return self._select_choice_once(field, choice)
-        except SelectionReview as error:
-            if not getattr(error, "wrong_value_committed", False):
-                raise
-        # A different value was committed (option list re-ordered under the click).
-        # Re-selecting is idempotent and verified again; never retried more than once.
-        return self._select_choice_once(field, choice)
+        except SelectionReview:
+            # Never leave an open dropdown covering later controls (e.g. the Attach button).
+            try:
+                self.client.press("Escape", '[id=' + json.dumps(field.field_id) + ']')
+            except BrowserError:
+                pass
+            raise
 
     def _select_choice_once(self, field: FieldObservation, choice: ChoiceRequest) -> FieldReadback:
         if field.role != "combobox" or not choice.search.strip() or not choice.labels:
@@ -175,7 +192,7 @@ class BrowserSkillBrowser:
             state = self._combo_state(field)
             if not state['found']:
                 raise SelectionReview("Combobox became unavailable; stop selection.")
-            options = [o for o in state['options'] if self._matches(choice, o.get('label'), o.get('country_code'))]
+            options = self._candidates(state, choice)
             if len(options) > 1:
                 raise SelectionReview("Multiple matching options; no option was clicked.")
             if len(options) == 1:
@@ -186,7 +203,7 @@ class BrowserSkillBrowser:
         option = options[0]
         # Refresh ownership and identity immediately before the option click.
         fresh = self._combo_state(field)
-        matches = [o for o in fresh['options'] if self._matches(choice, o.get('label'), o.get('country_code'))]
+        matches = self._candidates(fresh, choice)
         if len(matches) != 1 or matches[0] != option:
             raise SelectionReview("Option changed before selection; no option was clicked.")
         selector = ('[id=' + json.dumps(option['listbox_id']) + '] [role="option"][id='
@@ -257,6 +274,38 @@ class BrowserSkillBrowser:
         text = state.get("text") if isinstance(state.get("text"), str) else ""
         return FileReadback(found=state["found"], filenames=names,
                             shown_in_ui=bool(expected_name) and expected_name in text)
+
+    CONFIRMATION = re.compile(
+        r"thank you for applying|application (?:has been )?(?:submitted|received)|"
+        r"we(?:'ve| have) received your application", re.IGNORECASE)
+
+    def submit_application(self) -> SubmitOutcome:
+        """Click the single visible Submit button once. Never re-clicked, even on timeout."""
+        selector = 'form button[type="submit"]'
+        info = self.client.evaluate_readonly(
+            '(() => { const all = Array.from(document.querySelectorAll(' + json.dumps(selector) + '));'
+            ' return {count:all.length, visible:all.filter(b => b.getClientRects().length).length,'
+            ' text:all[0]?.innerText.trim() || "", disabled:!!all[0]?.disabled}; })()')
+        if not isinstance(info, dict) or info.get("count") != 1 or info.get("visible") != 1 \
+                or info.get("disabled") or not re.fullmatch(r"submit(?: application)?", (info.get("text") or "").casefold()):
+            raise SelectionReview("Cannot uniquely identify an enabled Submit control; nothing was clicked.")
+        self.observe_page()  # URL guard immediately before the irreversible click
+        self.client.click(selector)
+        detail = "no confirmation text observed"
+        for attempt in range(40):
+            time.sleep(1.0)
+            state = self.client.evaluate_readonly(
+                '({text: document.body.innerText.slice(0, 6000)})')
+            text = state.get("text", "") if isinstance(state, dict) else ""
+            if self.CONFIRMATION.search(text):
+                return SubmitOutcome(status="CONFIRMED", detail="Confirmation text observed.")
+            if re.search(r"security code|verification code", text, re.IGNORECASE):
+                detail = "page asks for an emailed security/verification code"
+                break
+            if re.search(r"captcha|are you a robot", text, re.IGNORECASE):
+                detail = "page shows a captcha challenge"
+                break
+        return SubmitOutcome(status="UNCONFIRMED", detail=detail)
 
     def handoff(self) -> str:
         return (f"BrowserSkill session {self.client.session_id}, tab {self.client.tab_id} "

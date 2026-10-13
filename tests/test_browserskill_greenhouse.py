@@ -6,7 +6,8 @@ from unittest.mock import Mock, patch
 
 from app.browser.interface import BrowserError, FieldObservation, FieldReadback, FileReadback, PageObservation
 from app.jobs.answer_engine import GeneratedAnswer
-from app.jobs.browserskill_greenhouse import UNSUPPORTED_PERSONAL_CLAIMS, run_greenhouse
+from app.browser.interface import SubmitOutcome
+from app.jobs.browserskill_greenhouse import UNSUPPORTED_PERSONAL_CLAIMS, run_greenhouse, submit_gate
 
 
 class BrowserSkillGreenhouseTests(unittest.TestCase):
@@ -17,7 +18,7 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
         data.update(changes)
         return FieldObservation(**data)
 
-    def run_flow(self, fields, *, hard_pass=True, score=92, actual='Known', error=None, file_readback=None, upload_error=None, draft=None, mapping=None):
+    def run_flow(self, fields, *, hard_pass=True, score=92, actual='Known', error=None, file_readback=None, upload_error=None, draft=None, mapping=None, submit=False, outcome=None):
         browser = Mock()
         browser.observe_page.return_value = PageObservation(url=self.url,
             title='Job Application for Engineer at Example', heading='Engineer', text='Engineer\nRemote', fields=fields)
@@ -41,7 +42,8 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
             ]:
                 stack.enter_context(patch(prefix + name, return_value=result))
             try:
-                report = run_greenhouse(browser, self.url)
+                browser.submit_application.return_value = outcome or SubmitOutcome(status='CONFIRMED', detail='ok')
+                report = run_greenhouse(browser, self.url, submit=submit)
             finally:
                 self.browser = browser
         return report
@@ -177,6 +179,62 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
         self.run_flow([self.field('q', 'Why us?')], mapping=self.unmapped,
                       draft=GeneratedAnswer(answer='Fine answer.', confidence='HIGH'))
         self.browser.fill_text.assert_not_called()
+
+    def ready_flow(self, **kw):
+        ledger = {}
+        with patch('app.jobs.browserskill_greenhouse._ledger', side_effect=lambda: dict(ledger)), \
+             patch('app.jobs.browserskill_greenhouse._record', side_effect=lambda u, st: ledger.update({u: st})):
+            report = self.run_flow([self.resume()], file_readback=FileReadback(found=True, filenames=['resume.pdf']), **kw)
+        return report, ledger
+
+    def test_submit_never_happens_without_the_flag(self):
+        report, ledger = self.ready_flow()
+        self.browser.submit_application.assert_not_called()
+        self.assertEqual((report.status, report.submission, ledger), ('READY', 'NOT_ATTEMPTED', {}))
+
+    def test_strict_gate_submits_once_and_records_ledger_first(self):
+        report, ledger = self.ready_flow(submit=True)
+        self.browser.submit_application.assert_called_once()
+        self.assertEqual(report.submission, 'CONFIRMED')
+        self.assertEqual(list(ledger.values()), ['CONFIRMED'])
+
+    def test_unconfirmed_submit_is_reported_not_retried(self):
+        report, _ = self.ready_flow(submit=True, outcome=SubmitOutcome(status='UNCONFIRMED', detail='captcha'))
+        self.assertEqual(report.submission, 'UNCONFIRMED')
+        self.browser.submit_application.assert_called_once()
+
+    def test_review_score_blocks_submit(self):
+        report, _ = self.ready_flow(submit=True, score=85)
+        self.browser.submit_application.assert_not_called()
+        self.assertEqual(report.submission, 'SKIPPED')
+
+    def test_not_ready_blocks_submit(self):
+        report = self.run_flow([self.resume(), self.field('salary', 'Current salary')],
+                               file_readback=FileReadback(found=True, filenames=['resume.pdf']), submit=True)
+        self.browser.submit_application.assert_not_called()
+        self.assertEqual(report.submission, 'SKIPPED')
+
+    def test_generated_answer_blocks_submit(self):
+        text = 'This role aligns with my experience building pipelines.'
+        report = self.run_flow([self.resume(), self.essay()], actual=text, mapping=self.unmapped, submit=True,
+                               file_readback=FileReadback(found=True, filenames=['resume.pdf']),
+                               draft=GeneratedAnswer(answer=text, confidence='HIGH'))
+        self.assertEqual(report.status, 'READY')
+        self.browser.submit_application.assert_not_called()
+        self.assertEqual(report.submission, 'SKIPPED')
+
+    def test_already_attempted_application_is_never_resubmitted(self):
+        with patch('app.jobs.browserskill_greenhouse._ledger', return_value={self.url: 'ATTEMPTING'}):
+            report = self.run_flow([self.resume()], file_readback=FileReadback(found=True, filenames=['resume.pdf']),
+                                   submit=True)
+        self.browser.submit_application.assert_not_called()
+        self.assertEqual(report.submission, 'SKIPPED')
+
+    def test_gate_reasons_are_all_reported(self):
+        report = SimpleNamespace(status='NOT_READY')
+        with patch('app.jobs.browserskill_greenhouse._ledger', return_value={}):
+            reasons = submit_gate('REVIEW', report, [('q', 'a')], self.url)
+        self.assertEqual(len(reasons), 3)
 
     def test_submit_is_never_clicked(self):
         self.run_flow([self.resume()], file_readback=FileReadback(found=True, filenames=['resume.pdf']))

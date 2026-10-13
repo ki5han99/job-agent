@@ -146,6 +146,35 @@ class ComboboxSelectionTests(unittest.TestCase):
             self.browser.select_choice(self.field,self.choice)
         self.assertEqual(self.client.click.call_count,1)
 
+    def test_identical_duplicate_place_rows_pick_the_first_only_when_allowed(self):
+        city = self.option | {'label': 'Seattle, Washington, United States', 'id': 'o0'}
+        dup = city | {'id': 'o1'}
+        choice = ChoiceRequest(search='Seattle', labels=['Seattle, Washington, United States'], identical_duplicates_ok=True)
+        self.browser.read_field = Mock(side_effect=[FieldReadback(found=True, value=None),
+                                                    FieldReadback(found=True, value='Seattle, Washington, United States')])
+        self.browser._combo_state = Mock(return_value=self.state([city, dup]))
+        self.browser.select_choice(self.field, choice)
+        self.assertIn('o0', self.client.click.call_args.args[0])
+
+    def test_different_place_labels_or_unflagged_duplicates_stay_review(self):
+        a = self.option | {'label': 'Seattle, Washington, United States', 'id': 'o0'}
+        for options, allowed in (([a, a | {'id': 'o1'}], False),
+                                 ([a, a | {'id': 'o1', 'label': 'Seattle, Washington, United States '.replace('Wash', 'Wash')}], False)):
+            with self.subTest(allowed=allowed):
+                choice = ChoiceRequest(search='Seattle', labels=[a['label']], identical_duplicates_ok=allowed)
+                self.browser.read_field = Mock(return_value=FieldReadback(found=True, value=None))
+                self.browser._combo_state = Mock(return_value=self.state(options))
+                with self.assertRaises(SelectionReview):
+                    self.browser.select_choice(self.field, choice)
+        self.assertFalse([c for c in self.client.click.call_args_list if 'option' in c.args[0] and 'o0' in c.args[0]])
+
+    def test_failed_selection_closes_the_dropdown(self):
+        self.browser.read_field = Mock(return_value=FieldReadback(found=True, value=None))
+        self.browser._combo_state = Mock(return_value=self.state([self.option, self.option | {'id': 'option2'}]))
+        with self.assertRaises(SelectionReview):
+            self.browser.select_choice(self.field, self.choice)
+        self.client.press.assert_called_once_with('Escape', '[id="observed"]')
+
     def test_missing_options_poll_readonly_then_review(self):
         self.browser.read_field = Mock(return_value=FieldReadback(found=True,value=None))
         self.browser._combo_state = Mock(return_value=self.state([]))
@@ -286,3 +315,41 @@ class FileUploadTests(unittest.TestCase):
         self.client.evaluate_readonly.return_value = 'nope'
         with self.assertRaises(BrowserError):
             self.browser.read_file(self.field, 'resume.pdf')
+
+
+class SubmitTests(unittest.TestCase):
+    def setUp(self):
+        self.client = Mock(session_id='test', tab_id=42)
+        self.browser = BrowserSkillBrowser(self.client)
+        self.page = dict(url='https://example.com/jobs/1', title='Job', heading='H', text='', fields=[])
+        self.browser.expected_url = self.page['url']
+        self.button = {'count': 1, 'visible': 1, 'text': 'Submit application', 'disabled': False}
+
+    def run_submit(self, texts):
+        self.client.evaluate_readonly.side_effect = [self.button, self.page] + [{'text': t} for t in texts]
+        with patch('app.browser.browserskill_browser.time.sleep'):
+            return self.browser.submit_application()
+
+    def test_confirmation_text_is_required_to_report_success(self):
+        out = self.run_submit(['', 'Thank you for applying!'])
+        self.assertEqual(out.status, 'CONFIRMED')
+        self.client.click.assert_called_once_with('form button[type="submit"]')
+
+    def test_timeout_is_unconfirmed_and_never_reclicked(self):
+        out = self.run_submit(['still the form'] * 40)
+        self.assertEqual(out.status, 'UNCONFIRMED')
+        self.client.click.assert_called_once()
+
+    def test_security_code_and_captcha_are_reported(self):
+        self.assertIn('security', self.run_submit(['Enter the security code we emailed you']).detail)
+        self.setUp()
+        self.assertIn('captcha', self.run_submit(['Please complete the captcha']).detail)
+
+    def test_ambiguous_disabled_or_wrong_button_is_not_clicked(self):
+        for bad in (dict(self.button, count=2), dict(self.button, visible=0), dict(self.button, disabled=True),
+                    dict(self.button, text='Save draft')):
+            with self.subTest(bad=bad):
+                self.client.evaluate_readonly.side_effect = [bad]
+                with self.assertRaises(SelectionReview):
+                    self.browser.submit_application()
+        self.client.click.assert_not_called()

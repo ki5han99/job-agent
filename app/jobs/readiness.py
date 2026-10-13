@@ -12,6 +12,7 @@ class ApplicationReadiness(BaseModel):
     blocking_items: list[str]
     optional_review_count: int
     optional_review_items: list[str]
+    submission: str = "NOT_ATTEMPTED"
 
 
 def build_readiness_report(

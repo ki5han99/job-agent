@@ -1,4 +1,5 @@
 """BrowserSkill Greenhouse workflow; unsupported or unapproved fields remain for review."""
+import json
 import re
 import time
 from pathlib import Path
@@ -33,7 +34,7 @@ def approved_choice(field: FormField, profile) -> ChoiceRequest | None:
     if question == "country" and field.field_id == "country" and location.country == "United States":
         return ChoiceRequest(search=location.country, labels=[location.country], country_code="us")
     # CA -> California is a spelling normalization, not a candidate fact inference.
-    state_names = {"CA": "California"}
+    state_names = US_STATE_NAMES
     if question == "which state do you currently reside in" and location.state.strip():
         state = location.state.strip()
         return ChoiceRequest(search=state_names.get(state, state), labels=[state, state_names.get(state, state)])
@@ -42,7 +43,8 @@ def approved_choice(field: FormField, profile) -> ChoiceRequest | None:
     )):
         city, state, country = location.city.strip(), location.state.strip(), location.country.strip()
         return ChoiceRequest(search=city, labels=[f"{city}, {state}, {country}",
-                                                  f"{city}, {state_names.get(state, state)}, {country}"])
+                                                  f"{city}, {state_names.get(state, state)}, {country}"],
+                             identical_duplicates_ok=True)
     return None
 
 
@@ -86,6 +88,21 @@ def grounded_answer(field: FormField, profile, job) -> str | None:
     return text
 
 
+# Postal abbreviation -> full name is spelling normalization, not a candidate fact.
+US_STATE_NAMES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+    "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia",
+    "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois",
+    "IN": "Indiana", "IA": "Iowa", "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana",
+    "ME": "Maine", "MD": "Maryland", "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota",
+    "MS": "Mississippi", "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+    "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+    "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma", "OR": "Oregon",
+    "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina", "SD": "South Dakota",
+    "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont", "VA": "Virginia",
+    "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+}
+
 RESUME_PATH = Path(__file__).resolve().parents[2] / "data" / "resume.pdf"
 
 
@@ -119,7 +136,37 @@ def upload_resume(browser: Browser, observation, field: FormField, resume: Path 
     )
 
 
-def run_greenhouse(browser: Browser, job_url: str, session_id=None, tab_id=None):
+SUBMISSION_LEDGER = Path(__file__).resolve().parents[2] / "data" / "submissions.json"
+
+
+def _ledger() -> dict:
+    try:
+        return json.loads(SUBMISSION_LEDGER.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _record(url: str, status: str) -> None:
+    ledger = _ledger()
+    ledger[url.split('?')[0].rstrip('/')] = status
+    SUBMISSION_LEDGER.write_text(json.dumps(ledger, indent=2))
+
+
+def submit_gate(decision: str, report, generated: list, job_url: str) -> list[str]:
+    """Reasons NOT to submit; an empty list means every strict condition holds."""
+    reasons = []
+    if decision != "AUTO_APPLY":
+        reasons.append(f"score decision is {decision}, not AUTO_APPLY")
+    if report.status != "READY":
+        reasons.append("readiness is " + report.status)
+    if generated:
+        reasons.append("LLM-generated answers require human review")
+    if job_url.split('?')[0].rstrip('/') in _ledger():
+        reasons.append("ledger shows this application was already attempted")
+    return reasons
+
+
+def run_greenhouse(browser: Browser, job_url: str, session_id=None, tab_id=None, submit: bool = False):
     try:
         if session_id is not None:
             browser.attach(session_id, tab_id, job_url)
@@ -228,6 +275,23 @@ def run_greenhouse(browser: Browser, job_url: str, session_id=None, tab_id=None)
         print("Optional review:", report.optional_review_items)
         for label, text in generated:
             print("GENERATED ANSWER (review before submitting):", label[:70], "→", text)
+        if submit:
+            reasons = submit_gate(decision, report, generated, job_url)
+            if reasons:
+                report.submission = "SKIPPED"
+                print("NOT SUBMITTING:", "; ".join(reasons))
+            else:
+                _record(job_url, "ATTEMPTING")  # written first: a crash must never allow a resubmit
+                try:
+                    outcome = browser.submit_application()
+                except BrowserError as error:
+                    report.submission = "NOT_CLICKED"
+                    _record(job_url, "NOT_CLICKED")
+                    print("NOT SUBMITTED:", error)
+                else:
+                    report.submission = outcome.status
+                    _record(job_url, outcome.status)
+                    print("SUBMISSION", outcome.status + ":", outcome.detail)
         return report
     finally:
         # Handoff deliberately does not call stop/close or replay browser actions.

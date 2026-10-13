@@ -41,10 +41,17 @@ class FileReadback(BaseModel):
     shown_in_ui: bool = False
 
 
+class SubmitOutcome(BaseModel):
+    status: str  # CONFIRMED | UNCONFIRMED
+    detail: str
+
+
 class ChoiceRequest(BaseModel):
     search: str
     labels: list[str]
     country_code: str | None = None
+    # Only for multi-part place labels, where identical duplicate rows are indistinguishable.
+    identical_duplicates_ok: bool = False
 
 
 class Browser(Protocol):
@@ -57,4 +64,5 @@ class Browser(Protocol):
     def select_choice(self, field: FieldObservation, choice: ChoiceRequest) -> FieldReadback: ...
     def upload_file(self, field: FieldObservation, path: str) -> None: ...
     def read_file(self, field: FieldObservation, expected_name: str) -> FileReadback: ...
+    def submit_application(self) -> SubmitOutcome: ...
     def handoff(self) -> str: ...
