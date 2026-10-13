@@ -24,6 +24,33 @@ def approved_sensitive_intent(label: str) -> str | None:
     question = question.replace(" (e.g., h-1b visa status)", "")
     if re.fullmatch(r"will you now or in the future require sponsorship(?: for employment (?:visa )?status)?", question):
         return "SPONSORSHIP_NOW_OR_FUTURE"
+    if re.fullmatch(r"(?:what is your )?(?:desired|expected) (?:annual )?salary(?: expectations?)?", question):
+        return "DESIRED_SALARY"
+    if _nyc_onsite_days(question) is not None:
+        return "NYC_ONSITE"
+    return None
+
+
+def _nyc_onsite_days(question: str) -> int | None:
+    match = re.fullmatch(
+        r"are you currently based in or planning to relocate to the nyc area and willing to "
+        r"work in our nyc office (\d) days a week", question)
+    return int(match.group(1)) if match else None
+
+
+def approved_yes_no(intent: str, label: str, profile: Profile) -> bool | None:
+    """Deterministic Yes/No for approved boolean intents; None when unknown."""
+    if intent == "US_AUTHORIZATION":
+        return profile.work_authorization.authorized_to_work_us
+    if intent == "SPONSORSHIP_NOW_OR_FUTURE":
+        return profile.work_authorization.requires_sponsorship_now_or_in_future
+    if intent == "NYC_ONSITE":
+        facts = profile.approved_answers
+        days = _nyc_onsite_days(normalized_question(label).replace(" (e.g., h-1b visa status)", ""))
+        # A Yes needs BOTH facts, and approval must cover at least the days asked.
+        if (facts.nyc_based_or_willing_to_relocate is True and facts.onsite_days_per_week_willing is not None
+                and days is not None and days <= facts.onsite_days_per_week_willing):
+            return True
     return None
 
 
@@ -44,11 +71,11 @@ def resolve_review_field(
 
     intent = approved_sensitive_intent(field.label)
     if intent or is_sensitive_question(field.label):
-        value = None
-        if intent == "US_AUTHORIZATION":
-            value = profile.work_authorization.authorized_to_work_us
-        elif intent == "SPONSORSHIP_NOW_OR_FUTURE":
-            value = profile.work_authorization.requires_sponsorship_now_or_in_future
+        if intent == "DESIRED_SALARY":
+            salary = (profile.approved_answers.desired_salary or "").strip() or None
+            return ResolvedField(field_id=field.field_id, label=field.label, value=salary,
+                                 status="READY" if salary else "REVIEW")
+        value = approved_yes_no(intent, field.label, profile) if intent else None
         return ResolvedField(field_id=field.field_id, label=field.label,
                              value=("Yes" if value else "No") if value is not None else None,
                              status="READY" if value is not None else "REVIEW")

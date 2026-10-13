@@ -45,7 +45,7 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
         return report
 
     def test_only_permitted_text_filled_and_unsupported_required_blocks(self):
-        fields = [self.field('first_name','First Name'), self.field('salary','Desired salary'),
+        fields = [self.field('first_name','First Name'), self.field('salary','Current salary'),
                   self.field('auth','Are you legally authorized to work in the United States?'),
                   self.field('sponsor','Will you require sponsorship?'),
                   self.field('resume','Resume',field_type='file')]

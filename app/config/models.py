@@ -32,6 +32,13 @@ class WorkAuthorization(BaseModel):
     authorization_type: str
 
 
+class ApprovedAnswers(BaseModel):
+    """Explicitly user-approved facts; never inferred. None means unknown -> REVIEW."""
+    desired_salary: str | None = None
+    nyc_based_or_willing_to_relocate: bool | None = None
+    onsite_days_per_week_willing: int | None = None
+
+
 class Education(BaseModel):
     institution: str
     degree: str
@@ -74,6 +81,7 @@ class Profile(BaseModel):
     location: Location
     links: Links
     work_authorization: WorkAuthorization
+    approved_answers: ApprovedAnswers = ApprovedAnswers()
     education: list[Education]
     experience: list[Experience]
     projects: list[Project]

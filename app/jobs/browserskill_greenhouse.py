@@ -12,16 +12,15 @@ from app.jobs.form_verifier import FieldVerification
 from app.jobs.greenhouse import validate_greenhouse_job_page
 from app.jobs.readiness import build_readiness_report
 from app.jobs.scorer import classify_score, score_job
-from app.jobs.review_field_resolver import approved_sensitive_intent, normalized_question
+from app.jobs.review_field_resolver import approved_sensitive_intent, approved_yes_no, normalized_question
 
 
 def approved_choice(field: FormField, profile) -> ChoiceRequest | None:
     if field.role != "combobox":
         return None
     intent = approved_sensitive_intent(field.label)
-    if intent:
-        fact = (profile.work_authorization.authorized_to_work_us if intent == "US_AUTHORIZATION"
-                else profile.work_authorization.requires_sponsorship_now_or_in_future)
+    if intent and intent != "DESIRED_SALARY":
+        fact = approved_yes_no(intent, field.label, profile)
         if fact is None:
             return None
         value = "Yes" if fact else "No"
@@ -55,7 +54,8 @@ def permitted_text(field: FormField) -> bool:
         "preferred_name": {"preferred first name", "preferred name"},
         "email": {"email", "email address"}, "phone": {"phone", "phone number"},
     }
-    return label in labels.get(field.field_id, set()) or label == "linkedin profile"
+    return (label in labels.get(field.field_id, set()) or label == "linkedin profile"
+            or approved_sensitive_intent(field.label) == "DESIRED_SALARY")
 
 
 RESUME_PATH = Path(__file__).resolve().parents[2] / "data" / "resume.pdf"
