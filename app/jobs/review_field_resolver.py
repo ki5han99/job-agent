@@ -18,11 +18,14 @@ def normalized_question(label: str) -> str:
 
 def approved_sensitive_intent(label: str) -> str | None:
     question = normalized_question(label)
-    if re.fullmatch(r"are you legally authorized to work in (?:the )?(?:united states(?: of america)?|u\.s\.|us|usa)", question):
+    if re.fullmatch(r"are you (?:currently )?(?:legally )?authorized to work in (?:the )?(?:united states(?: of america)?|u\.s\.?|us|usa)", question):
         return "US_AUTHORIZATION"
     # Only discard this explicitly approved explanatory example, not arbitrary clauses.
-    question = question.replace(" (e.g., h-1b visa status)", "")
-    if re.fullmatch(r"will you now or in the future require sponsorship(?: for employment (?:visa )?status)?", question):
+    question = re.sub(r"\s*\(e\.g\.?,?\s*h-?1-?b(?: visa)?(?: status)?\)", "", question)
+    if re.fullmatch(
+        r"will you now or (?:at any point )?in the future require (?:visa )?sponsorship"
+        r"(?: for employment (?:visa )?status)?"
+        r"(?: to work in (?:the )?(?:united states(?: of america)?|u\.s\.?|us|usa))?", question):
         return "SPONSORSHIP_NOW_OR_FUTURE"
     if re.fullmatch(r"(?:what is your )?(?:desired|expected) (?:annual )?salary(?: expectations?)?", question):
         return "DESIRED_SALARY"
@@ -46,7 +49,7 @@ def approved_yes_no(intent: str, label: str, profile: Profile) -> bool | None:
         return profile.work_authorization.requires_sponsorship_now_or_in_future
     if intent == "NYC_ONSITE":
         facts = profile.approved_answers
-        days = _nyc_onsite_days(normalized_question(label).replace(" (e.g., h-1b visa status)", ""))
+        days = _nyc_onsite_days(normalized_question(label))
         # A Yes needs BOTH facts, and approval must cover at least the days asked.
         if (facts.nyc_based_or_willing_to_relocate is True and facts.onsite_days_per_week_willing is not None
                 and days is not None and days <= facts.onsite_days_per_week_willing):

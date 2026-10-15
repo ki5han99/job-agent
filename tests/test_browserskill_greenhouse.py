@@ -4,10 +4,15 @@ from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from app.config.loader import load_profile
 from app.browser.interface import BrowserError, FieldObservation, FieldReadback, FileReadback, PageObservation
 from app.jobs.answer_engine import GeneratedAnswer
 from app.browser.interface import SubmitOutcome
-from app.jobs.browserskill_greenhouse import UNSUPPORTED_PERSONAL_CLAIMS, run_greenhouse, submit_gate
+from app.jobs.browserskill_greenhouse import UNSUPPORTED_PERSONAL_CLAIMS, company_from_page, run_greenhouse, submit_gate
+
+
+from tests.support import make_profile
+REAL_PROFILE = make_profile()
 
 
 class BrowserSkillGreenhouseTests(unittest.TestCase):
@@ -18,12 +23,26 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
         data.update(changes)
         return FieldObservation(**data)
 
-    def run_flow(self, fields, *, hard_pass=True, score=92, actual='Known', error=None, file_readback=None, upload_error=None, draft=None, mapping=None, submit=False, outcome=None):
+    def run_flow(self, fields, *, hard_pass=True, score=92, actual='Known', error=None, file_readback=None, upload_error=None, draft=None, mapping=None, submit=False, outcome=None,
+                 select=None, select_error=None, checkbox=None, select_hook=None, page_sequence=None):
         browser = Mock()
         browser.observe_page.return_value = PageObservation(url=self.url,
             title='Job Application for Engineer at Example', heading='Engineer', text='Engineer\nRemote', fields=fields)
+        if page_sequence:
+            def page(i):
+                return PageObservation(url=self.url, title='Job Application for Engineer at Example', heading='Engineer',
+                                       text='Engineer\nRemote', fields=page_sequence[min(i, len(page_sequence) - 1)])
+            browser.observe_page.side_effect = [page(i) for i in range(12)]
         browser.read_field.return_value = FieldReadback(found=True, value=actual)
         browser.read_file.return_value = file_readback or FileReadback(found=True, filenames=[])
+        if select_hook:
+            browser.select_choice = select_hook
+        elif select_error:
+            browser.select_choice.side_effect = select_error
+        elif select:
+            browser.select_choice.return_value = select
+        if checkbox:
+            browser.set_checkbox.return_value = checkbox
         if upload_error:
             browser.upload_file.side_effect = upload_error
         if error:
@@ -34,7 +53,7 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
             prefix = 'app.jobs.browserskill_greenhouse.'
             for name, result in [
                 ('extract_job', SimpleNamespace(title='Engineer', company='Example')),
-                ('load_profile', Mock()), ('load_preferences', preferences),
+                ('load_profile', REAL_PROFILE), ('load_preferences', preferences),
                 ('passes_hard_filters', SimpleNamespace(passed=hard_pass,reasons=[])),
                 ('score_job', SimpleNamespace(overall_score=score,explanation='Test')),
                 ('get_effective_mapping', mapping or SimpleNamespace(status='READY',value='Known')),
@@ -60,6 +79,119 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
         self.browser.handoff.assert_called_once()
         self.browser.close.assert_not_called()
         self.browser.click.assert_not_called()
+
+    def test_eeo_decline_is_selected_and_verified(self):
+        field = self.field('gender', 'Gender*', role='combobox')
+        report = self.run_flow([field], select=FieldReadback(found=True, value="I don't wish to answer"))
+        request = self.browser.select_choice.call_args.args[1]
+        self.assertTrue(request.no_search)
+        self.assertIn("i don't wish to answer", request.labels)
+        self.assertEqual(report.verified_count, 1)
+        self.assertNotIn('Gender*', report.blocking_items)
+
+    def test_race_is_selected_through_the_policy_and_verified(self):
+        field = self.field('race', 'Race/Ethnicity', role='combobox')
+
+        def select(observation, choice):             # what the adapter does: resolve the pick, then select it
+            choice.labels = [choice.pick(['White', 'Asian', 'Decline to self identify'])]
+            return FieldReadback(found=True, value=choice.labels[0])
+        report = self.run_flow([field], select_hook=Mock(side_effect=select))
+        self.assertEqual(report.verified_count, 1)
+        self.assertNotIn('Race/Ethnicity', report.blocking_items)
+
+    def test_race_with_no_matching_category_is_review_not_decline(self):
+        from app.browser.interface import SelectionReview
+        field = self.field('race', 'Race/Ethnicity', role='combobox')
+        report = self.run_flow([field], select_error=SelectionReview('No listed option satisfies the approved policy'))
+        self.assertIn('Race/Ethnicity', report.blocking_items)
+        self.assertEqual(report.verified_count, 0)
+
+    def test_fields_revealed_by_an_answer_are_processed_too(self):
+        first = self.field('hisp', 'Are you Hispanic/Latino?', role='combobox')
+        revealed = self.field('race', 'Please identify your race*', role='combobox')
+        pages = [[first], [first, revealed], [first, revealed], [first, revealed], [first, revealed], [first, revealed]]
+
+        def select(observation, choice):
+            choice.labels = [choice.pick(['White', 'Asian', 'Yes', 'No'])]
+            return FieldReadback(found=True, value=choice.labels[0])
+        report = self.run_flow([first], select_hook=Mock(side_effect=select), page_sequence=pages)
+        self.assertEqual(self.browser.select_choice.call_count, 2)
+        self.assertEqual(report.verified_count, 2)
+        self.assertNotIn('Please identify your race*', report.blocking_items)
+
+    def test_generated_cover_letter_file_blocks_the_submit_gate(self):
+        field = self.field('cover_letter', 'Cover Letter*', field_type='file')
+        with patch('app.jobs.browserskill_greenhouse.generate_cover_letter', return_value='Dear team. ' * 30), \
+                patch('app.jobs.browserskill_greenhouse.write_cover_letter_file', return_value=__import__('pathlib').Path('/tmp/cl.txt')), \
+                patch('app.jobs.browserskill_greenhouse.submit_gate', wraps=submit_gate) as gate:
+            report = self.run_flow([field], file_readback=FileReadback(found=True, filenames=['cl.txt']), submit=True)
+        generated = gate.call_args.args[2]
+        self.assertEqual([label for label, _ in generated], ['Cover Letter*'])    # the gate saw generated content
+        self.browser.submit_application.assert_not_called()
+        self.assertEqual(report.submission, 'SKIPPED')
+
+    def test_eeo_without_decline_option_is_review(self):
+        from app.browser.interface import SelectionReview
+        field = self.field('gender', 'Gender*', role='combobox')
+        report = self.run_flow([field], select_error=SelectionReview('No unique enabled matching option'))
+        self.assertEqual(report.verified_count, 0)
+        self.assertIn('Gender*', report.blocking_items)
+
+    def test_eligible_consent_checkbox_is_ticked_and_verified(self):
+        field = self.field('privacy', 'By clicking this box and submitting your application, you consent to our Applicant Privacy Statement.',
+                           field_type='checkbox')
+        report = self.run_flow([field], checkbox=FieldReadback(found=True, value='checked'))
+        self.browser.set_checkbox.assert_called_once()
+        self.assertEqual(report.verified_count, 1)
+        self.assertNotIn(field.label, report.blocking_items)
+
+    def test_ineligible_consent_checkbox_is_never_ticked(self):
+        for label in ('I agree to receive marketing emails and text messages about future opportunities.',
+                      'I consent to my data being shared with third parties.',
+                      'I do not consent to the processing of my personal data.'):
+            with self.subTest(label=label):
+                field = self.field('bg', label, field_type='checkbox')
+                report = self.run_flow([field])
+                self.browser.set_checkbox.assert_not_called()
+                self.assertIn(label, report.blocking_items)
+
+    def test_approved_background_check_and_certification_are_ticked(self):
+        for label in ('You consent to third-party background checks as part of your application process.',
+                      'I certify that all information provided is true and complete.',
+                      'I agree to resolve any disputes through binding arbitration.'):
+            with self.subTest(label=label):
+                field = self.field('c', label, field_type='checkbox')
+                report = self.run_flow([field], checkbox=FieldReadback(found=True, value='checked'))
+                self.browser.set_checkbox.assert_called_once()
+                self.assertEqual(report.verified_count, 1)
+
+    def test_company_name_extraction(self):
+        url = 'https://job-boards.greenhouse.io/bitgo/jobs/8880855002'
+        self.assertEqual(company_from_page('Job Application for Senior Data Engineer at BitGo', url), 'BitGo')
+        self.assertEqual(company_from_page('Job Application for Engineer at Gusto, Inc.', url), 'Gusto, Inc.')
+        for title in ('page_title', '', 'Unknown', 'Job Application for Senior Data Engineer at page_title',
+                      'Job Application for Senior Data Engineer'):
+            with self.subTest(title=title):
+                self.assertEqual(company_from_page(title, url), 'Bitgo')
+        self.assertEqual(company_from_page('page_title', 'https://job-boards.greenhouse.io/included-health/jobs/1'),
+                         'Included Health')
+
+    def test_unverified_checkbox_fails_readiness(self):
+        field = self.field('privacy', 'I have read and acknowledge the Candidate Privacy Notice.', field_type='checkbox')
+        report = self.run_flow([field], checkbox=FieldReadback(found=True, value='unchecked'))
+        self.assertEqual(report.failed_count, 1)
+        self.assertEqual(report.status, 'NOT_READY')
+
+    def test_company_name_extraction(self):
+        url = 'https://job-boards.greenhouse.io/bitgo/jobs/8880855002'
+        self.assertEqual(company_from_page('Job Application for Senior Data Engineer at BitGo', url), 'BitGo')
+        self.assertEqual(company_from_page('Job Application for Engineer at Foo at Gusto, Inc.', url), 'Gusto, Inc.')
+        for title in ('page_title', '', 'Unknown', 'Job Application for Senior Data Engineer at page_title',
+                      'Job Application for Senior Data Engineer'):
+            with self.subTest(title=title):
+                self.assertEqual(company_from_page(title, url), 'Bitgo')
+        self.assertEqual(company_from_page('page_title', 'https://job-boards.greenhouse.io/included-health/jobs/1'),
+                         'Included Health')
 
     def test_hard_filter_skip_never_mutates(self):
         self.run_flow([self.field('first_name','First Name')],hard_pass=False)

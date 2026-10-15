@@ -314,14 +314,17 @@ def run_playwright(job_url: str):
         browser.close()
 
 
-def main(job_url: str, browser_backend: str = "browserskill", session_id=None, tab_id=None, submit: bool = False):
+def main(job_url: str, browser_backend: str = "browserskill", session_id=None, tab_id=None, submit: bool = False,
+         ignore_score: bool = False):
     if browser_backend == "playwright":
         return run_playwright(job_url)
     from app.browser.browserskill_browser import BrowserSkillBrowser
     from app.jobs.browserskill_greenhouse import run_greenhouse
     print("Browser: BrowserSkill (primary)")
     print("Job URL:", job_url)
-    return run_greenhouse(BrowserSkillBrowser(), job_url, session_id, tab_id, submit=submit)
+    from app.jobs.intent_llm import classify_with_llm
+    return run_greenhouse(BrowserSkillBrowser(), job_url, session_id, tab_id, submit=submit,
+                          ignore_score=ignore_score, intent_llm=classify_with_llm)
 
 
 def parse_options(argv: list[str] | None = None):
@@ -335,6 +338,8 @@ def parse_options(argv: list[str] | None = None):
     parser.add_argument("--tab-id", type=int, help="Agent tab belonging to --session")
     parser.add_argument("--submit", action="store_true",
                         help="Click Submit ONLY when the strict gate passes (AUTO_APPLY, READY, no generated answers)")
+    parser.add_argument("--ignore-score", action="store_true",
+                        help="TEMPORARY: bypass the score threshold (hard filters, READY and no-generated-answers still apply)")
     parser.add_argument("--all-test-jobs", action="store_true", help="Run every job in data/test_jobs.yaml")
     args = parser.parse_args(argv)
     if args.submit and args.browser != "browserskill":
@@ -363,8 +368,8 @@ if __name__ == "__main__":
         for url in load_test_job_urls():
             print("=" * 70)
             try:
-                main(url, options.browser, submit=options.submit)
+                main(url, options.browser, submit=options.submit, ignore_score=options.ignore_score)
             except Exception as error:  # one failing job must not stop the batch
                 print("JOB FAILED:", url, "→", error)
     else:
-        main(options.job_url, options.browser, options.session, options.tab_id, options.submit)
+        main(options.job_url, options.browser, options.session, options.tab_id, options.submit, options.ignore_score)

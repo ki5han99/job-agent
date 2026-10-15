@@ -125,3 +125,79 @@ class StateNameTests(ReviewResolverTests):
                 self.assertEqual(choice.search, name)
                 city = approved_choice(self.field('Location (City)*'), self.profile)
                 self.assertIn(f'Palo Alto, {name}, United States', city.labels)
+
+
+class BatchTwoWordingTests(ReviewResolverTests):
+    """Wording variants seen on live forms; facts: authorized=YES, sponsorship now/future=NO."""
+
+    def test_authorization_yes(self):
+        for label in ('Are you legally authorized to work in the United States?*',
+                      'Are you authorized to work in the United States?'):
+            with self.subTest(label=label):
+                got = self.resolve(label)
+                self.assertEqual((got.status, got.value), ('READY', 'Yes'))
+                self.assertEqual(approved_choice(self.field(label), self.profile).labels, ['Yes'])
+
+    def test_sponsorship_no_across_live_wordings(self):
+        for label in (
+            'Will you now or in the future require sponsorship for employment visa status (e.g. H-1B visa status)?*',  # Gemini
+            'Will you now or in the future require sponsorship for employment visa status (e.g. H1B visa status)?*',   # Point72
+            'Will you now or at any point in the future require visa sponsorship to work in the United States?*',       # Tailscale
+        ):
+            with self.subTest(label=label):
+                got = self.resolve(label)
+                self.assertEqual((got.status, got.value), ('READY', 'No'))
+                self.assertEqual(approved_choice(self.field(label), self.profile).labels, ['No'])
+
+    def test_unknown_facts_still_review(self):
+        self.auth.authorized_to_work_us = None
+        self.auth.requires_sponsorship_now_or_in_future = None
+        for label in ('Are you legally authorized to work in the United States?',
+                      'Will you now or at any point in the future require visa sponsorship to work in the United States?'):
+            self.assertEqual(self.resolve(label).status, 'REVIEW')
+
+    def test_nearby_but_different_questions_stay_review(self):
+        for label in ('Are you authorized to work in the country for which you applied?',
+                      'Will you now or in the future require sponsorship and relocation?',
+                      'Are you located in or willing to relocate to the United States?',
+                      'Have you been employed by Gemini in the past?',
+                      'Have you previously applied to work at Point72?',
+                      'How did you learn about this position',
+                      'Years of Work Experience',
+                      'In which language(s) are you fluent (written) other than English?',
+                      'What is your highest level of completed education?'):
+            with self.subTest(label=label):
+                self.assertEqual(self.resolve(label).status, 'REVIEW')
+                self.assertIsNone(approved_choice(self.field(label), self.profile))
+
+    def test_repository_profile_has_both_approved_facts(self):
+        from app.config.loader import load_profile
+        auth = load_profile().work_authorization
+        self.assertIs(auth.authorized_to_work_us, True)
+        self.assertIs(auth.requires_sponsorship, False)
+        self.assertIs(auth.requires_sponsorship_now_or_in_future, False)
+
+
+class EeoTests(ReviewResolverTests):
+    def test_eeo_questions_offer_only_decline_labels(self):
+        from app.jobs.eeo import DECLINE_LABELS
+        for label in ('Gender*', 'Are you Hispanic/Latino?*', 'Veteran Status*', 'Race/Ethnicity',
+                      'Disability Status', 'Sexual Orientation', 'Are you transgender?'):
+            with self.subTest(label=label):
+                request = approved_choice(self.field(label), self.profile)
+                self.assertEqual(request.labels, DECLINE_LABELS)
+                self.assertTrue(request.no_search)
+                # No candidate fact is ever offered as an answer.
+                for fact in ('male', 'female', 'yes', 'no', 'not a protected veteran', 'i am not a veteran'):
+                    self.assertNotIn(fact, request.labels)
+
+    def test_non_eeo_questions_get_no_decline_choice(self):
+        for label in ('Have you served in the military?', 'How did you learn about this position',
+                      'Do you have a preference about gender-neutral restrooms and a very long extra explanation '
+                      'of the facilities that goes well beyond any plausible demographic survey label'):
+            with self.subTest(label=label):
+                self.assertIsNone(approved_choice(self.field(label), self.profile))
+
+    def test_non_combobox_eeo_is_left_for_review(self):
+        plain = FormField(label='Gender', field_id='g', name=None, field_type='text', role=None, required=True)
+        self.assertIsNone(approved_choice(plain, self.profile))

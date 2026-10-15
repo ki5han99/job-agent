@@ -39,6 +39,26 @@ class ApprovedAnswers(BaseModel):
     onsite_days_per_week_willing: int | None = None
 
 
+class Military(BaseModel):
+    """Explicit user-approved facts; None means unknown -> REVIEW."""
+    served: bool | None = None
+    is_veteran: bool | None = None
+
+
+class Demographics(BaseModel):
+    """Explicitly approved EEO facts. None = no approved fact -> the EEO decline default applies."""
+    race_ethnicity: str | None = None
+    race_ethnicity_also: list[str] = []      # equally acceptable categories when the primary one is not offered
+    hispanic_latino: bool | None = None
+
+
+class Address(BaseModel):
+    """Street-level address; city/state/country come from Profile.location (single source)."""
+    line1: str = ""
+    line2: str = ""
+    postal_code: str = ""
+
+
 class Education(BaseModel):
     institution: str
     degree: str
@@ -82,6 +102,10 @@ class Profile(BaseModel):
     links: Links
     work_authorization: WorkAuthorization
     approved_answers: ApprovedAnswers = ApprovedAnswers()
+    address: Address = Address()
+    languages: list[str] = []
+    military: Military = Military()
+    demographics: Demographics = Demographics()
     education: list[Education]
     experience: list[Experience]
     projects: list[Project]
@@ -129,6 +153,34 @@ class ScoringPreferences(BaseModel):
     review_minimum: int
 
 
+class RelocationPreferences(BaseModel):
+    willing_anywhere: bool | None = None
+
+
+class OnsitePreferences(BaseModel):
+    willing: bool | None = None
+
+
+class ApplicationDefaults(BaseModel):
+    preferred_location_fallback: str | None = None  # free-text location when no options exist
+    referral_source: str | None = None
+
+
+class ConsentPolicy(BaseModel):
+    """Consent categories the user approved for employment-application checkboxes."""
+    approved_categories: list[str] = []
+
+
+class AnswerPolicies(BaseModel):
+    """Approved standing answers/policies (data/answers.yaml); empty means nothing approved."""
+    desired_salary_usd: int | None = None
+    product_familiarity_default: bool | None = None
+    product_usage_detail: str | None = None   # "personal": which 'Yes, ...' option to take when several exist
+    eeo_default: str | None = None  # "decline"
+    consent: ConsentPolicy = ConsentPolicy()
+    cover_letter_generation: bool | None = None
+
+
 class Preferences(BaseModel):
     target_roles: list[str]
     work_arrangements: WorkArrangements
@@ -137,4 +189,7 @@ class Preferences(BaseModel):
     seniority: SeniorityPreferences
     employment_types: list[str]
     hard_filters: HardFilters
-    scoring: ScoringPreferences    
+    scoring: ScoringPreferences
+    relocation: RelocationPreferences = RelocationPreferences()
+    onsite: OnsitePreferences = OnsitePreferences()
+    application_defaults: ApplicationDefaults = ApplicationDefaults()

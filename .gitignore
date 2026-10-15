@@ -3,3 +3,6 @@ __pycache__/
 *.py[cod]
 .DS_Store
 data/submissions.json
+
+# Generated cover letters (personal content)
+data/generated/

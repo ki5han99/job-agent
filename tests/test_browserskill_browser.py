@@ -241,14 +241,16 @@ class ComboboxSelectionTests(unittest.TestCase):
         option_clicks = [c for c in self.client.click.call_args_list if 'option' in c.args[0]]
         self.assertEqual(len(option_clicks), 2)
 
-    def test_uncommitted_failure_is_not_retried(self):
+    def test_uncommitted_failure_is_retried_exactly_once(self):
+        # A click lost to a re-render commits nothing. One more verified attempt is allowed (the retry
+        # re-reads the current value first, so a late commit is never double-clicked); never a third.
         self.browser.read_field = Mock(return_value=FieldReadback(found=True, value=None))
         self.browser._combo_state = Mock(return_value=dict(self.state([self.option]), selected=None))
         with patch('app.browser.browserskill_browser.time.sleep'):
             with self.assertRaises(SelectionReview):
                 self.browser.select_choice(self.field, self.choice)
         option_clicks = [c for c in self.client.click.call_args_list if 'option' in c.args[0]]
-        self.assertEqual(len(option_clicks), 1)
+        self.assertEqual(len(option_clicks), 2)
 
 
 class FileUploadTests(unittest.TestCase):
@@ -274,6 +276,30 @@ class FileUploadTests(unittest.TestCase):
         selector, sent = self.client.upload.call_args.args
         self.assertEqual(selector, 'div:has(> input[id="resume"][type="file"]) > button')
         self.assertEqual(sent, self.path)
+
+    def test_unsupported_picker_falls_back_to_one_drop_delivery_to_the_owning_wrapper(self):
+        unsupported = BrowserError("BrowserSkill 'upload' exited 1: unsupported; upload trigger did not activate an input[type=file]")
+        self.client.evaluate_readonly.side_effect = [self.page, {'count': 1, 'text': 'Attach', 'inputs': 1}, {'count': 1}]
+        self.client.upload.side_effect = [unsupported, None]
+        self.browser.upload_file(self.field, self.path)
+        self.assertEqual(self.client.upload.call_count, 2)
+        selector, sent = self.client.upload.call_args.args
+        self.assertEqual(selector, 'div:has(> input[id="resume"][type="file"])')
+        self.assertEqual(self.client.upload.call_args.kwargs, {'mode': 'drop'})
+
+    def test_drop_fallback_needs_one_unambiguous_wrapper_and_only_for_unsupported_errors(self):
+        unsupported = BrowserError("BrowserSkill 'upload' exited 1: unsupported; ...")
+        self.client.evaluate_readonly.side_effect = [self.page, {'count': 1, 'text': 'Attach', 'inputs': 1}, {'count': 2}]
+        self.client.upload.side_effect = unsupported
+        with self.assertRaises(SelectionReview):
+            self.browser.upload_file(self.field, self.path)
+        self.assertEqual(self.client.upload.call_count, 1)                    # no drop delivered to an ambiguous target
+        self.client.upload.reset_mock()
+        self.client.evaluate_readonly.side_effect = [self.page, {'count': 1, 'text': 'Attach', 'inputs': 1}]
+        self.client.upload.side_effect = BrowserError("BrowserSkill 'upload' exited 1: timeout")
+        with self.assertRaises(BrowserError):
+            self.browser.upload_file(self.field, self.path)
+        self.assertEqual(self.client.upload.call_count, 1)                    # other failures are never retried
 
     def test_non_attach_or_ambiguous_trigger_is_not_used(self):
         for info in ({'count': 4, 'text': 'Attach', 'inputs': 1}, {'count': 1, 'text': 'Dropbox', 'inputs': 1},
@@ -352,4 +378,154 @@ class SubmitTests(unittest.TestCase):
                 self.client.evaluate_readonly.side_effect = [bad]
                 with self.assertRaises(SelectionReview):
                     self.browser.submit_application()
+        self.client.click.assert_not_called()
+
+
+class PickFailureMessageTests(unittest.TestCase):
+    def test_failure_lists_the_options_the_page_offered(self):
+        client = Mock(session_id='t', tab_id=1)
+        browser = BrowserSkillBrowser(client)
+        field = FieldObservation(label='Q', field_type='text', name=None, field_id='q', role='combobox', required=True)
+        options = [dict(id=f'o{i}', label=f'Option number {i}', listbox_id='lb', disabled=False, unique=True) for i in range(12)]
+        browser.read_field = Mock(return_value=FieldReadback(found=True, value=None))
+        browser._combo_state = Mock(return_value=dict(found=True, options=options, expanded='true', nshown=0, listboxes=1, selected=None))
+        with patch('app.browser.browserskill_browser.time.sleep'):
+            with self.assertRaises(SelectionReview) as caught:
+                browser.select_choice(field, ChoiceRequest(search='x', labels=[], pick=lambda labels: None, no_search=True))
+        self.assertIn('Option number 0', str(caught.exception))
+        self.assertIn('Option number 11', str(caught.exception))
+
+
+class TypeaheadPickTests(unittest.TestCase):
+    def test_a_typeahead_pick_types_the_search_when_nothing_is_listed_yet(self):
+        client = Mock(session_id='t', tab_id=1)
+        browser = BrowserSkillBrowser(client)
+        field = FieldObservation(label='School*', field_type='text', name=None, field_id='school', role='combobox', required=True)
+        option = dict(id='o1', label='The University of Texas at Dallas', listbox_id='lb', disabled=False, unique=True)
+        empty = dict(found=True, options=[], expanded='true', nshown=0, listboxes=1, selected=None)
+        listed = dict(empty, options=[option])
+        committed = dict(found=True, options=[], expanded='false', nshown=1, listboxes=0, selected='The University of Texas at Dallas')
+        def clicked_option():
+            return any('option' in c.args[0] for c in client.click.call_args_list)
+
+        def state(_field):                 # empty until searched, listed after the search, committed after the click
+            if clicked_option():
+                return committed
+            return listed if client.fill.called else empty
+        browser.read_field = Mock(side_effect=lambda f: FieldReadback(
+            found=True, value='The University of Texas at Dallas' if clicked_option() else None))
+        browser._combo_state = Mock(side_effect=state)
+        choice = ChoiceRequest(search='University of Texas at Dallas', labels=[],
+                               pick=lambda labels: labels[0] if len(labels) == 1 else None)
+        with patch('app.browser.browserskill_browser.time.sleep'):
+            result = browser.select_choice(field, choice)
+        client.fill.assert_called_once_with('[id="school"]', 'University of Texas at Dallas')
+        self.assertEqual(result.value, 'The University of Texas at Dallas')
+        self.assertEqual(choice.chosen, 'The University of Texas at Dallas')
+
+
+class TypeaheadFallbackTests(unittest.TestCase):
+    def test_shorter_terms_are_tried_only_when_the_full_search_lists_nothing(self):
+        client = Mock(session_id='t', tab_id=1)
+        browser = BrowserSkillBrowser(client)
+        field = FieldObservation(label='School*', field_type='text', name=None, field_id='school', role='combobox', required=True)
+        option = dict(id='o1', label='University of Texas at Dallas', listbox_id='lb', disabled=False, unique=True)
+        empty = dict(found=True, options=[], expanded='true', nshown=0, listboxes=1, selected=None)
+        committed = dict(found=True, options=[], expanded='false', nshown=1, listboxes=0, selected='University of Texas at Dallas')
+
+        def state(_field):
+            if any('option' in c.args[0] for c in client.click.call_args_list):
+                return committed
+            typed = [c.args[1] for c in client.fill.call_args_list]
+            return dict(empty, options=[option]) if typed and typed[-1] == 'Dallas' else empty
+        browser.read_field = Mock(side_effect=lambda f: FieldReadback(
+            found=True, value='University of Texas at Dallas' if any('option' in c.args[0] for c in client.click.call_args_list) else None))
+        browser._combo_state = Mock(side_effect=state)
+        choice = ChoiceRequest(search='University of Texas at Dallas', search_fallbacks=['Texas Dallas', 'Dallas'], labels=[],
+                               pick=lambda labels: labels[0] if len(labels) == 1 else None)
+        with patch('app.browser.browserskill_browser.time.sleep'):
+            result = browser.select_choice(field, choice)
+        self.assertEqual([c.args[1] for c in client.fill.call_args_list], ['University of Texas at Dallas', 'Texas Dallas', 'Dallas'])
+        self.assertEqual(result.value, 'University of Texas at Dallas')
+
+
+class MultiSelectChipTests(unittest.TestCase):
+    def test_page_query_reads_multi_select_chips_as_the_committed_value(self):
+        import inspect
+        import app.browser.browserskill_browser as module
+        source = inspect.getsource(module.BrowserSkillBrowser._combo_state)
+        self.assertIn('.select__multi-value__label', source)
+        self.assertIn('chips.map(c => c.innerText.trim()).join', source)
+
+    def test_a_chip_selection_verifies_without_a_retry(self):
+        client = Mock(session_id='t', tab_id=1)
+        browser = BrowserSkillBrowser(client)
+        field = FieldObservation(label='Gender', field_type='text', name=None, field_id='g', role='combobox', required=True)
+        option = dict(id='o1', label="I don't wish to answer", listbox_id='lb', disabled=False, unique=True)
+        listed = dict(found=True, options=[option], expanded='true', nshown=0, listboxes=1, selected=None)
+        chipped = dict(found=True, options=[], expanded='false', nshown=1, listboxes=0, selected="I don't wish to answer")
+
+        def state(_field):
+            return chipped if any('option' in c.args[0] for c in client.click.call_args_list) else listed
+        browser.read_field = Mock(side_effect=lambda f: FieldReadback(
+            found=True, value="I don't wish to answer" if any('option' in c.args[0] for c in client.click.call_args_list) else None))
+        browser._combo_state = Mock(side_effect=state)
+        choice = ChoiceRequest(search='decline', labels=[], pick=lambda labels: "I don't wish to answer", no_search=True)
+        with patch('app.browser.browserskill_browser.time.sleep'):
+            result = browser.select_choice(field, choice)
+        self.assertEqual(result.value, "I don't wish to answer")
+        option_clicks = [c for c in client.click.call_args_list if 'option' in c.args[0]]
+        self.assertEqual(len(option_clicks), 1)
+
+
+class SelectionRetryTests(unittest.TestCase):
+    def setUp(self):
+        self.client = Mock(session_id='test', tab_id=42)
+        self.browser = BrowserSkillBrowser(self.client)
+        self.field = FieldObservation(label='Privacy *', field_type='text', name=None, field_id='q',
+                                      role='combobox', required=True)
+        self.choice = ChoiceRequest(search='Yes', labels=['Yes'])
+        self.done = FieldReadback(found=True, value='Yes')
+        self.browser._combo_state = Mock(return_value={'chips': []})
+
+    def lost_click(self):
+        error = SelectionReview('Selection was attempted but committed value did not verify')
+        error.wrong_value_committed, error.nothing_committed = False, True
+        return error
+
+    def test_a_lost_click_is_retried_once_and_then_verified(self):
+        with patch.object(self.browser, '_select_choice_once', side_effect=[self.lost_click(), self.done]) as once:
+            self.assertEqual(self.browser.select_choice(self.field, self.choice).value, 'Yes')
+        self.assertEqual(once.call_count, 2)
+
+    def test_a_second_lost_click_stops_for_review_without_a_third_try(self):
+        with patch.object(self.browser, '_select_choice_once', side_effect=[self.lost_click(), self.lost_click()]) as once:
+            with self.assertRaises(SelectionReview):
+                self.browser.select_choice(self.field, self.choice)
+        self.assertEqual(once.call_count, 2)
+        self.client.press.assert_called()          # the dropdown is closed again
+
+    def test_ordinary_review_reasons_are_never_retried(self):
+        with patch.object(self.browser, '_select_choice_once', side_effect=SelectionReview('No unique enabled matching option')) as once:
+            with self.assertRaises(SelectionReview):
+                self.browser.select_choice(self.field, self.choice)
+        self.assertEqual(once.call_count, 1)
+
+
+    def test_a_wrong_multiselect_chip_is_removed_before_the_retry(self):
+        wrong = SelectionReview('committed value did not verify')
+        wrong.wrong_value_committed, wrong.nothing_committed = True, False
+        choice = ChoiceRequest(search='Asian', labels=['South Asian'])
+        states = [{'chips': ['Hispanic or Latinx']}, {'chips': []}]
+        self.browser._combo_state = Mock(side_effect=states)
+        with patch.object(self.browser, '_select_choice_once', side_effect=[wrong, self.done]):
+            self.browser.select_choice(self.field, choice)
+        clicked = [c.args[0] for c in self.client.click.call_args_list]
+        self.assertEqual(len(clicked), 1)
+        self.assertIn('Remove Hispanic or Latinx', clicked[0])
+
+    def test_the_approved_chip_is_never_removed(self):
+        choice = ChoiceRequest(search='Asian', labels=['South Asian'])
+        self.browser._combo_state = Mock(return_value={'chips': ['South Asian']})
+        self.browser._remove_wrong_chips(self.field, choice)
         self.client.click.assert_not_called()

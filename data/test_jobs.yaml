@@ -1,17 +1,60 @@
-# Change default_job to another key below to choose your usual test posting.
-# Availability checked October 13, 2026; postings can expire.
-default_job: garner_data_engineer
+# Batch 3: fresh Greenhouse postings (verified open; never seen in earlier batches or the ledger).
+default_job: job_01
 
 jobs:
-  garner_data_engineer:
-    company: Garner Health
-    title: Data Engineer III
-    url: https://job-boards.greenhouse.io/garnerhealth/jobs/6181548004
-  garner_senior_data_engineer:
-    company: Garner Health
-    title: Senior Data Engineer
-    url: https://job-boards.greenhouse.io/garnerhealth/jobs/6181631004
-  underdog_analytics_engineer:
-    company: Underdog
-    title: Analytics Engineer II, Regulatory Reporting
-    url: https://job-boards.greenhouse.io/underdog/jobs/4727923005
+  job_01:
+    company: anthropic
+    title: "Pre-training Data Infrastructure Engineer"
+    url: https://job-boards.greenhouse.io/anthropic/jobs/4973067008
+  job_02:
+    company: applovin
+    title: "ML Data Infrastructure Engineer"
+    url: https://job-boards.greenhouse.io/applovin/jobs/4716524006
+  job_03:
+    company: chime
+    title: "Senior Software Engineer, Data Engineering"
+    url: https://job-boards.greenhouse.io/chime/jobs/8505462002
+  job_04:
+    company: chime
+    title: "Senior Software Engineer, Data Platform"
+    url: https://job-boards.greenhouse.io/chime/jobs/8840193002
+  job_05:
+    company: clearstreet
+    title: "Data Analytics Engineer"
+    url: https://job-boards.greenhouse.io/clearstreet/jobs/8113916
+  job_06:
+    company: doximity
+    title: "Senior Software Engineer, Data"
+    url: https://job-boards.greenhouse.io/doximity/jobs/8155070
+  job_07:
+    company: lendingtree
+    title: "Senior Data Engineer"
+    url: https://job-boards.greenhouse.io/lendingtree/jobs/8265347
+  job_08:
+    company: mixpanel
+    title: "Senior Software Engineer, Data Foundation"
+    url: https://job-boards.greenhouse.io/mixpanel/jobs/7943560
+  job_09:
+    company: reddit
+    title: "Analytics Engineer"
+    url: https://job-boards.greenhouse.io/reddit/jobs/8282760
+  job_10:
+    company: robinhood
+    title: "Senior Software Engineer, Data Engineering"
+    url: https://job-boards.greenhouse.io/robinhood/jobs/4738660
+  job_11:
+    company: spacex
+    title: "Data Engineer, Ground Network Engineering (Gateway)"
+    url: https://job-boards.greenhouse.io/spacex/jobs/8784022002
+  job_12:
+    company: spacex
+    title: "Data Engineer (Starlink)"
+    url: https://job-boards.greenhouse.io/spacex/jobs/8626535002
+  job_13:
+    company: spacex
+    title: "Data Engineer (Starlink)"
+    url: https://job-boards.greenhouse.io/spacex/jobs/8626500002
+  job_14:
+    company: zocdoc
+    title: "Senior Software Engineer, Data"
+    url: https://job-boards.greenhouse.io/zocdoc/jobs/8227741

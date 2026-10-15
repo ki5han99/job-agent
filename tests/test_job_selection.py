@@ -1,8 +1,13 @@
 import unittest
 from unittest.mock import patch
 
-from app.config.loader import load_default_test_job_url
+from pathlib import Path
+
+from app.config.loader import load_default_test_job_url, load_test_job_urls
 from main import parse_job_url
+
+
+FIXTURE = Path(__file__).parent / "fixtures" / "test_jobs.yaml"
 
 
 class JobSelectionTests(unittest.TestCase):
@@ -57,8 +62,16 @@ class JobSelectionTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         load_default_test_job_url()
 
-    def test_repository_config_selects_garner(self):
+    def test_fixture_config_selects_garner(self):
+        # A frozen fixture, so rotating data/test_jobs.yaml batches cannot break this.
         self.assertEqual(
-            load_default_test_job_url(),
+            load_default_test_job_url(FIXTURE),
             "https://job-boards.greenhouse.io/garnerhealth/jobs/6181548004",
         )
+        self.assertEqual(len(load_test_job_urls(FIXTURE)), 1)
+
+    def test_live_batch_config_is_well_formed(self):
+        # Content-agnostic: whatever batch is loaded must parse and its default must resolve.
+        urls = load_test_job_urls()
+        self.assertTrue(urls)
+        self.assertIn(load_default_test_job_url(), urls)

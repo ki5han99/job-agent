@@ -75,7 +75,7 @@ class BrowserSkillBrowser:
             const matches = Array.from(document.querySelectorAll('[id]')).filter(el => el.id === FIELD_ID);
             if (matches.length !== 1) return {found:false,value:null};
             const el = matches[0];
-            const textual = (el.tagName === 'INPUT' && ['text','email','tel'].includes(el.type)) ||
+            const textual = (el.tagName === 'INPUT' && ['text','email','tel','number'].includes(el.type)) ||
                 el.tagName === 'TEXTAREA';
             if (location.href !== EXPECTED_URL || !textual || el.getAttribute('role') === 'combobox' ||
                 !el.getClientRects().length || el.disabled || el.readOnly)
@@ -88,7 +88,7 @@ class BrowserSkillBrowser:
             raise BrowserError("Invalid field readback.") from error
 
     def fill_text(self, field: FieldObservation, value: str) -> None:
-        if field.role == "combobox" or field.field_type not in {"text", "email", "tel", "textarea"}:
+        if field.role == "combobox" or field.field_type not in {"text", "email", "tel", "number", "textarea"}:
             raise BrowserError("Unsupported action: not a plain text field.")
         if field not in self.observe_page().fields:
             raise BrowserError("Field label or metadata changed; re-plan before filling.")
@@ -97,6 +97,8 @@ class BrowserSkillBrowser:
         self.client.fill('[id=' + json.dumps(field.field_id) + ']', value)
 
     def read_field(self, field: FieldObservation) -> FieldReadback:
+        if field.field_type == "checkbox":
+            return self._read_checkbox(field)
         if field.role == "combobox":
             state = self._combo_state(field)
             return FieldReadback(found=state["found"], value=state.get("selected"),
@@ -129,9 +131,15 @@ class BrowserSkillBrowser:
                     unique:!!opt.id && Array.from(document.querySelectorAll('[id]')).filter(x => x.id === opt.id).length === 1
                 })) : [];
             const selected = Array.from(shell.querySelectorAll('.select__single-value')).filter(visible);
-            const committed = el.getAttribute('aria-expanded') !== 'true' && selected.length === 1;
-            return {found:true, options, expanded:el.getAttribute('aria-expanded'), nshown:selected.length, listboxes:boxes.length,
-                selected:committed ? selected[0].innerText.trim() : null,
+            // Multi-select widgets show each choice as a chip and hide it from the option list.
+            const chips = Array.from(shell.querySelectorAll('.select__multi-value__label')).filter(visible);
+            const total = selected.length + chips.length;
+            const closed = el.getAttribute('aria-expanded') !== 'true';
+            const committed = closed && selected.length === 1 && chips.length === 0;
+            const chipped = closed && chips.length > 0 && selected.length === 0;
+            return {found:true, options, expanded:el.getAttribute('aria-expanded'), nshown:total, listboxes:boxes.length,
+                chips:chips.map(c => c.innerText.trim()),
+                selected:committed ? selected[0].innerText.trim() : (chipped ? chips.map(c => c.innerText.trim()).join('; ') : null),
                 country_code:committed ? flag(selected[0]) : null};
         })'''
         state = self.client.evaluate_readonly(
@@ -160,10 +168,12 @@ class BrowserSkillBrowser:
             try:
                 return self._select_choice_once(field, choice)
             except SelectionReview as error:
-                if not getattr(error, "wrong_value_committed", False):
+                if not (getattr(error, "wrong_value_committed", False) or getattr(error, "nothing_committed", False)):
                     raise
-            # A different value was committed (option list re-ordered under the click).
-            # Re-selecting is idempotent and verified again; never retried more than once.
+            # A different value was committed (option list re-ordered under the click), or the click was
+            # lost to a re-render and nothing was committed. Re-selecting is idempotent and verified again;
+            # never retried more than once. A multi-select keeps the wrong chip, so remove it first.
+            self._remove_wrong_chips(field, choice)
             return self._select_choice_once(field, choice)
         except SelectionReview:
             # Never leave an open dropdown covering later controls (e.g. the Attach button).
@@ -173,8 +183,20 @@ class BrowserSkillBrowser:
                 pass
             raise
 
+    def _remove_wrong_chips(self, field: FieldObservation, choice: ChoiceRequest) -> None:
+        """Remove multi-select chips that are not the approved choice, then require a clean state."""
+        chips = self._combo_state(field).get("chips") or []
+        for chip in chips:
+            if self._matches(choice, chip, None):
+                continue
+            self.client.click('.select-shell:has([id=' + json.dumps(field.field_id) + ']) button[aria-label='
+                              + json.dumps("Remove " + chip) + ']')
+        left = [c for c in (self._combo_state(field).get("chips") or []) if not self._matches(choice, c, None)]
+        if left:
+            raise SelectionReview(f"Wrong multi-select values could not be removed: {left}")
+
     def _select_choice_once(self, field: FieldObservation, choice: ChoiceRequest) -> FieldReadback:
-        if field.role != "combobox" or not choice.search.strip() or not choice.labels:
+        if field.role != "combobox" or not choice.search.strip() or not (choice.labels or choice.pick):
             raise SelectionReview("No supported approved combobox target.")
         current = self.read_field(field)
         if not current.found:
@@ -185,8 +207,45 @@ class BrowserSkillBrowser:
         state = self._combo_state(field)
         if not state['found']:
             raise SelectionReview("Combobox changed after opening; stop selection.")
+        if choice.pick is not None:
+            def listed_options() -> list[dict]:
+                return [o for o in self._combo_state(field)['options'] if o.get('label') and not o.get('disabled')]
+
+            def poll(attempts: int) -> list[dict]:
+                found: list[dict] = []
+                for attempt in range(attempts):   # async option lists may populate just after opening
+                    found = listed_options()
+                    if found:
+                        break
+                    time.sleep(0.25)
+                return found
+
+            visible = poll(16)                     # a long list can take a few seconds to load
+            if not visible and choice.no_search:   # an already-open menu toggles shut on click: open it once more
+                self.client.click('[id=' + json.dumps(field.field_id) + ']')
+                visible = poll(8)
+            picked = choice.pick([o['label'] for o in visible]) if visible else None
+            if not picked and not choice.no_search:   # a typeahead lists everything until searched
+                for term in [choice.search, *choice.search_fallbacks]:
+                    self.client.fill('[id=' + json.dumps(field.field_id) + ']', term)
+                    time.sleep(0.5)
+                    visible = poll(16 if choice.search_fallbacks else 40)   # server-side searches can take a while
+                    picked = choice.pick([o['label'] for o in visible]) if visible else None
+                    if picked:
+                        break
+            if not picked:
+                listed = "; ".join(o['label'][:70] for o in visible[:14]) or "none"
+                now = self._combo_state(field)
+                raise SelectionReview("No listed option satisfies the approved policy; nothing was clicked. "
+                                      f"Options seen ({len(visible)}): {listed} "
+                                      f"[expanded={now.get('expanded')}, listboxes={now.get('listboxes')}, shown={now.get('nshown')}]")
+            choice.labels, choice.search, choice.chosen, choice.pick = [picked], picked, picked, None
+            state = self._combo_state(field)          # the list as it is now (a search may have filtered it)
+            if self._matches(choice, current.value, current.country_code):
+                self.client.press("Escape", '[id=' + json.dumps(field.field_id) + ']')
+                return current
         options = [o for o in state['options'] if self._matches(choice, o.get('label'), o.get('country_code'))]
-        if not options:
+        if not options and not choice.no_search:
             self.client.fill('[id=' + json.dumps(field.field_id) + ']', choice.search)
         for attempt in range(12):
             state = self._combo_state(field)
@@ -199,7 +258,12 @@ class BrowserSkillBrowser:
                 break
             time.sleep(0.25)
         if len(options) != 1 or not options[0].get('unique') or options[0].get('disabled'):
-            raise SelectionReview("No unique enabled matching option; selection left for review.")
+            listed = "; ".join((o.get('label') or '')[:50] for o in state['options'][:10]) or "none"
+            raise SelectionReview(
+                "No unique enabled matching option; selection left for review. "
+                f"Wanted: {choice.labels[:2]}; matching={len(options)} "
+                f"unique={[bool(o.get('unique')) for o in options]} disabled={[bool(o.get('disabled')) for o in options]}; "
+                f"options seen: {listed}")
         option = options[0]
         # Refresh ownership and identity immediately before the option click.
         fresh = self._combo_state(field)
@@ -229,7 +293,46 @@ class BrowserSkillBrowser:
             f"listboxes={last.get('listboxes')}, selected={last.get('selected')!r}, "
             f"code={last.get('country_code')!r}).")
         error.wrong_value_committed = last.get("selected") is not None
+        error.nothing_committed = last.get("selected") is None and not last.get("expanded") == "true"
         raise error
+
+    def _read_checkbox(self, field: FieldObservation) -> FieldReadback:
+        if field.field_type != "checkbox" or not field.field_id:
+            return FieldReadback(found=False, value=None)
+        query = r'''((id, url) => {
+            const matches = Array.from(document.querySelectorAll('[id]')).filter(el => el.id === id);
+            const el = matches.length === 1 ? matches[0] : null;
+            if (!el || el.type !== 'checkbox' || location.href !== url || el.disabled || !el.getClientRects().length)
+                return {found:false, value:null};
+            return {found:true, value:el.checked ? 'checked' : 'unchecked'};
+        })'''
+        try:
+            return FieldReadback.model_validate(self.client.evaluate_readonly(
+                query + '(' + json.dumps(field.field_id) + ',' + json.dumps(self.observe_page().url) + ')'))
+        except ValidationError as error:
+            raise BrowserError("Invalid checkbox readback.") from error
+
+    def set_checkbox(self, field: FieldObservation) -> FieldReadback:
+        """Tick one uniquely identified checkbox (never untick); returns the verified readback."""
+        if field not in self.observe_page().fields:
+            raise BrowserError("Field label or metadata changed; re-plan before ticking.")
+        current = self._read_checkbox(field)
+        if not current.found:
+            raise SelectionReview("Checkbox is missing, disabled, or ambiguous.")
+        if current.value != "checked":
+            # Styled checkboxes often swallow a click on the bare input; the label is the real hit target.
+            for selector in ('[id=' + json.dumps(field.field_id) + ']',
+                             'label[for=' + json.dumps(field.field_id) + ']'):
+                try:
+                    self.client.click(selector)
+                except BrowserError:
+                    continue
+                for attempt in range(6):
+                    current = self._read_checkbox(field)
+                    if current.found and current.value == "checked":
+                        return current
+                    time.sleep(0.25)
+        return current
 
     def _file_trigger(self, field: FieldObservation) -> str:
         """Selector of the single 'Attach' button sharing a wrapper with the file input."""
@@ -246,13 +349,29 @@ class BrowserSkillBrowser:
             raise SelectionReview("Cannot uniquely identify the file attach control.")
         return selector
 
+    def _file_drop_target(self, field: FieldObservation) -> str:
+        selector = 'div:has(> input[id=' + json.dumps(field.field_id) + '][type="file"])'
+        info = self.client.evaluate_readonly(
+            '(() => ({count: document.querySelectorAll(' + json.dumps(selector) + ').length}))()')
+        if not isinstance(info, dict) or info.get("count") != 1:
+            raise SelectionReview("Cannot uniquely identify a drop target for the file field.")
+        return selector
+
     def upload_file(self, field: FieldObservation, path: str) -> None:
         file = Path(path)
         if not file.is_absolute() or not file.is_file():
             raise BrowserError("Upload source must be an existing absolute file path.")
         if field not in self.observe_page().fields:
             raise BrowserError("Field label or metadata changed; re-plan before uploading.")
-        self.client.upload(self._file_trigger(field), str(file))
+        trigger = self._file_trigger(field)
+        try:
+            self.client.upload(trigger, str(file))
+        except BrowserError as error:
+            # Pickers built on showOpenFilePicker() reject the trigger. Deliver once to the single wrapper
+            # that owns this input; the caller still verifies the attachment independently.
+            if "unsupported" not in str(error).lower():
+                raise
+            self.client.upload(self._file_drop_target(field), str(file), mode="drop")
 
     def read_file(self, field: FieldObservation, expected_name: str) -> FileReadback:
         if field.field_type != "file" or not field.field_id:
@@ -309,4 +428,4 @@ class BrowserSkillBrowser:
 
     def handoff(self) -> str:
         return (f"BrowserSkill session {self.client.session_id}, tab {self.client.tab_id} "
-                "left open for human review. Nothing submitted.")
+                "left open for human review.")

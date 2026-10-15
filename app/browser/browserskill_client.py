@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 
 from app.browser.interface import BrowserError
@@ -84,9 +85,12 @@ class BrowserSkillClient:
         # Only the adapter exposes this, after checking combobox/option identity.
         self._json(["bsk", "click", "--selector", selector, *self._target()])
 
-    def upload(self, selector: str, path: str) -> None:
-        """Deliver a local file through the page's own file chooser trigger."""
-        self._json(["bsk", "upload", "--selector", selector, "--file", path, *self._target()])
+    def upload(self, selector: str, path: str, mode: str = "input") -> None:
+        """Deliver a local file through the page's own file chooser trigger (or a drop target)."""
+        command = ["bsk", "upload", "--selector", selector, "--file", path, *self._target()]
+        if mode != "input":
+            command += ["--mode", mode]
+        self._json(command)
 
     def press(self, key: str, selector: str) -> None:
         self._json(["bsk", "press", key, "--selector", selector, *self._target()])
@@ -102,7 +106,10 @@ class BrowserSkillClient:
                 "bsk",
                 "session",
                 "start",
-                "--no-focus",
+                # Visible by default so the run can be watched; opt back into
+                # a background window with BSK_BACKGROUND=1.
+                *(["--no-focus"] if os.environ.get("BSK_BACKGROUND") == "1" else []),
+                "--width", "1280", "--height", "900",
             ]
         )
 

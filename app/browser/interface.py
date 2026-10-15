@@ -1,5 +1,5 @@
 """Small browser-neutral contract for the first Greenhouse migration slice."""
-from typing import Protocol
+from typing import Callable, Protocol
 
 from pydantic import BaseModel
 
@@ -52,6 +52,14 @@ class ChoiceRequest(BaseModel):
     country_code: str | None = None
     # Only for multi-part place labels, where identical duplicate rows are indistinguishable.
     identical_duplicates_ok: bool = False
+    # Only pick from options already listed; never type into the combobox to filter.
+    no_search: bool = False
+    # Policy-driven choice among whatever options the page lists (education, ranges, ...).
+    # The adapter calls pick(option_labels) once, then sets labels/search/chosen to the result.
+    pick: Callable[[list[str]], str | None] | None = None
+    chosen: str | None = None
+    # Typeaheads: shorter terms tried in order when the full search lists nothing usable.
+    search_fallbacks: list[str] = []
 
 
 class Browser(Protocol):
@@ -62,6 +70,7 @@ class Browser(Protocol):
     def fill_text(self, field: FieldObservation, value: str) -> None: ...
     def read_field(self, field: FieldObservation) -> FieldReadback: ...
     def select_choice(self, field: FieldObservation, choice: ChoiceRequest) -> FieldReadback: ...
+    def set_checkbox(self, field: FieldObservation) -> FieldReadback: ...
     def upload_file(self, field: FieldObservation, path: str) -> None: ...
     def read_file(self, field: FieldObservation, expected_name: str) -> FileReadback: ...
     def submit_application(self) -> SubmitOutcome: ...
