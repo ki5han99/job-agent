@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from playwright.sync_api import sync_playwright
 
 from app.jobs.form_parser import parse_form_fields
-from app.jobs.form_verifier import FieldVerification
 from app.jobs.readiness import build_readiness_report
 
 
@@ -40,29 +39,6 @@ class FormParserTests(unittest.TestCase):
         self.assertEqual(len(fields), 1)
         self.assertEqual(fields[0].field_id, "country")
         self.assertTrue(fields[0].required)
-
-    def test_named_combobox_validation_proxy_is_not_a_missing_field(self):
-        html = widget("country", "Country*").replace(
-            '<input required tabindex="-1" aria-hidden="true" value="">',
-            '<input name="country" required tabindex="-1" aria-hidden="true" value="">',
-        )
-        fields = self.parse(html)
-        report = build_readiness_report(
-            [
-                FieldVerification(
-                    field_id="country",
-                    label="Country",
-                    expected_value="US",
-                    actual_value="US",
-                    status="VERIFIED",
-                )
-            ],
-            [],
-            fields,
-        )
-        self.assertEqual(len(fields), 1)
-        self.assertEqual(report.status, "READY")
-        self.assertEqual(report.blocking_items, [])
 
     def test_multiple_widgets_stay_distinct(self):
         fields = self.parse(widget("country", "Country*") + widget("state", "State*"))

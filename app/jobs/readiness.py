@@ -34,7 +34,7 @@ def build_readiness_report(
         label = field.label or field.field_id or field.name or f"Unlabeled {kind} field #{index + 1}"
         if field.required:
             missing_required.append(label)
-        else:
+        elif not matches or field in review_items:
             optional_review_items.append(label)
 
     verified_count = sum(
