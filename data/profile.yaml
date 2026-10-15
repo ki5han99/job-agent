@@ -9,8 +9,8 @@ contact:
   phone: "+1 (945) 444-7666"
 
 location:
-  city: "Palo Alto"
-  state: "CA"
+  city: "Seattle"
+  state: "WA"
   country: "United States"
 
 links:
@@ -19,9 +19,38 @@ links:
   portfolio: ""
 
 work_authorization:
-  authorized_to_work_us: null
-  requires_sponsorship: null
+  authorized_to_work_us: true
+  requires_sponsorship: false
+  requires_sponsorship_now_or_in_future: false
   authorization_type: ""
+
+# Street-level address (city/state/country live under `location`). Fill these in;
+# until then address-line and ZIP fields stay for review rather than being invented.
+address:
+  line1: ""
+  line2: ""
+  postal_code: ""
+
+languages:
+  - "English"
+  - "Telugu"
+
+military:
+  served: null
+  is_veteran: null
+
+# Approved EEO facts. Anything not listed here (gender identity, sexual orientation, transgender
+# status, disability) keeps the "decline to answer" default.
+demographics:
+  race_ethnicity: null
+  race_ethnicity_also: []        # equivalents accepted when a form has no plain option
+  hispanic_latino: null
+
+# Explicitly user-approved facts (never inferred).
+approved_answers:
+  desired_salary: null   # superseded by desired_salary_usd in data/answers.yaml
+  nyc_based_or_willing_to_relocate: true
+  onsite_days_per_week_willing: 3
 
 education:
   - institution: "University of Texas at Dallas"

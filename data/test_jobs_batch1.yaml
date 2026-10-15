@@ -1,0 +1,84 @@
+# Batch of 20 live Greenhouse postings (verified open via boards-api on 2026-10-14).
+default_job: job_01
+
+jobs:
+  job_01:
+    company: Garner
+    title: Data Engineer III
+    url: https://job-boards.greenhouse.io/garnerhealth/jobs/6181548004
+  job_02:
+    company: Garner
+    title: Senior Data Engineer
+    url: https://job-boards.greenhouse.io/garnerhealth/jobs/6181631004
+  job_03:
+    company: Underdog
+    title: Analytics Engineer II
+    url: https://job-boards.greenhouse.io/underdog/jobs/4727923005
+  job_04:
+    company: Underdog
+    title: Senior Analytics Engineer
+    url: https://job-boards.greenhouse.io/underdog/jobs/4727925005
+  job_05:
+    company: Discord
+    title: Senior Data Engineer Ads
+    url: https://job-boards.greenhouse.io/discord/jobs/8299493002
+  job_06:
+    company: Discord
+    title: Senior Data Engineer
+    url: https://job-boards.greenhouse.io/discord/jobs/8485884002
+  job_07:
+    company: Anthropic
+    title: Data Engineer Billing
+    url: https://job-boards.greenhouse.io/anthropic/jobs/5450099008
+  job_08:
+    company: Anthropic
+    title: Data Engineer GTM
+    url: https://job-boards.greenhouse.io/anthropic/jobs/5418610008
+  job_09:
+    company: Anthropic
+    title: Data Engineer Product
+    url: https://job-boards.greenhouse.io/anthropic/jobs/5448481008
+  job_10:
+    company: Anthropic
+    title: Data Engineer Safeguards
+    url: https://job-boards.greenhouse.io/anthropic/jobs/5240422008
+  job_11:
+    company: Anthropic
+    title: Recruiting Analytics Data Engineer
+    url: https://job-boards.greenhouse.io/anthropic/jobs/5424111008
+  job_12:
+    company: Gusto
+    title: Senior Data Engineer
+    url: https://job-boards.greenhouse.io/gusto/jobs/8099751
+  job_13:
+    company: Oscar
+    title: Senior Analytics Engineer
+    url: https://job-boards.greenhouse.io/oscar/jobs/7809846
+  job_14:
+    company: Mercury
+    title: Senior Analytics Engineer
+    url: https://job-boards.greenhouse.io/mercury/jobs/6217794004
+  job_15:
+    company: Point72
+    title: Data Engineer
+    url: https://job-boards.greenhouse.io/point72/jobs/7829230002
+  job_16:
+    company: Point72
+    title: Data Engineer Knowledge Graph
+    url: https://job-boards.greenhouse.io/point72/jobs/8701705002
+  job_17:
+    company: Point72
+    title: Data Engineer Proprietary Research
+    url: https://job-boards.greenhouse.io/point72/jobs/7667745002
+  job_18:
+    company: Faire
+    title: Senior Analytics Engineer Marketplace
+    url: https://job-boards.greenhouse.io/faire/jobs/8833031002
+  job_19:
+    company: Faire
+    title: Senior Finance Analytics Engineer
+    url: https://job-boards.greenhouse.io/faire/jobs/8828560002
+  job_20:
+    company: Faire
+    title: Senior Product Analytics Engineer Ads
+    url: https://job-boards.greenhouse.io/faire/jobs/8804205002

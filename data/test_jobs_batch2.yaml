@@ -1,0 +1,36 @@
+# Batch 2: 8 fresh Greenhouse postings (verified open 2026-10-14).
+default_job: job_01
+
+jobs:
+  job_01:
+    company: Scale AI
+    title: Senior Data Engineer Public Sector
+    url: https://job-boards.greenhouse.io/scaleai/jobs/4713597005
+  job_02:
+    company: Gemini
+    title: Senior Data Engineer
+    url: https://job-boards.greenhouse.io/gemini/jobs/8076827
+  job_03:
+    company: Figma
+    title: Data Platform Engineer
+    url: https://job-boards.greenhouse.io/figma/jobs/6201407004
+  job_04:
+    company: Tailscale
+    title: Analytics Engineer Data
+    url: https://job-boards.greenhouse.io/tailscale/jobs/4721289005
+  job_05:
+    company: BitGo
+    title: Senior Data Engineer NY
+    url: https://job-boards.greenhouse.io/bitgo/jobs/8880857002
+  job_06:
+    company: BitGo
+    title: Senior Data Engineer Palo Alto
+    url: https://job-boards.greenhouse.io/bitgo/jobs/8880855002
+  job_07:
+    company: Verkada
+    title: Senior Software Engineer Data Platform
+    url: https://job-boards.greenhouse.io/verkada/jobs/5215882007
+  job_08:
+    company: Point72
+    title: Senior Data Engineer Proprietary Research
+    url: https://job-boards.greenhouse.io/point72/jobs/7769261002

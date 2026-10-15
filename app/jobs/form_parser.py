@@ -65,6 +65,24 @@ def parse_form_fields(
             if label_element.count() > 0:
                 label = label_element.first.inner_text()
 
+        # React Select's required validation proxy is visually measurable, but
+        # is not a second question. Only omit it if its real widget was parsed.
+        if (
+            not field_id and not name and not label.strip() and not role
+            and element.get_attribute("aria-hidden") == "true"
+            and element.get_attribute("tabindex") == "-1"
+        ):
+            companion_id = element.evaluate("""el => {
+                const shell = el.closest('.select-shell');
+                const combos = shell ? shell.querySelectorAll('[role="combobox"][id]') : [];
+                return combos.length === 1 ? combos[0].id : null;
+            }""")
+            if companion_id and any(
+                field.field_id == companion_id and field.role == "combobox" and field.label
+                for field in fields
+            ):
+                continue
+
         fields.append(
             FormField(
                 label=label.strip(),

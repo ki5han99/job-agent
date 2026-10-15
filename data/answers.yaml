@@ -1,0 +1,27 @@
+# Approved application answers / standing policies.
+# Salary is a form answer only: it is NOT a job filter and never causes a job to be skipped.
+desired_salary_usd: 120000
+
+# Generic "have you used / are you familiar with <product>?" -> Yes. No invented usage details.
+product_familiarity_default: true
+
+# When a product-usage dropdown only offers detailed Yes options, take the personal-use one.
+# (Approved explicitly by the user; free-text usage stories are never generated.)
+product_usage_detail: personal
+
+# Optional EEO/demographic questions: choose an explicit decline option when one exists.
+eeo_default: decline
+
+# Consent / acknowledgment checkboxes approved for employment applications.
+# Marketing, promotional e-mail and newsletter opt-ins are NOT approved.
+consent:
+  approved_categories:
+    - PRIVACY_ACK
+    - DATA_PROCESSING_ACK
+    - AI_USE_ACK
+    - BACKGROUND_CHECK_AUTH
+    - TRUTHFULNESS_CERT
+    - ARBITRATION
+    - TERMS_ACK
+
+cover_letter_generation: true
