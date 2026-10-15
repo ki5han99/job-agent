@@ -39,3 +39,13 @@ hard_filters:
 scoring:
   auto_apply_minimum: 90
   review_minimum: 80
+# Standing preferences used to answer application questions.
+relocation:
+  willing_anywhere: true      # any U.S. city
+
+onsite:
+  willing: true               # onsite, full-time onsite, hybrid / office days
+
+application_defaults:
+  preferred_location_fallback: "Philadelphia, PA"   # only when the form has no options
+  referral_source: "Company website"
