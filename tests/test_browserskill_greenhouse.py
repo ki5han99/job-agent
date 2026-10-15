@@ -165,17 +165,6 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
                 self.browser.set_checkbox.assert_called_once()
                 self.assertEqual(report.verified_count, 1)
 
-    def test_company_name_extraction(self):
-        url = 'https://job-boards.greenhouse.io/bitgo/jobs/8880855002'
-        self.assertEqual(company_from_page('Job Application for Senior Data Engineer at BitGo', url), 'BitGo')
-        self.assertEqual(company_from_page('Job Application for Engineer at Gusto, Inc.', url), 'Gusto, Inc.')
-        for title in ('page_title', '', 'Unknown', 'Job Application for Senior Data Engineer at page_title',
-                      'Job Application for Senior Data Engineer'):
-            with self.subTest(title=title):
-                self.assertEqual(company_from_page(title, url), 'Bitgo')
-        self.assertEqual(company_from_page('page_title', 'https://job-boards.greenhouse.io/included-health/jobs/1'),
-                         'Included Health')
-
     def test_unverified_checkbox_fails_readiness(self):
         field = self.field('privacy', 'I have read and acknowledge the Candidate Privacy Notice.', field_type='checkbox')
         report = self.run_flow([field], checkbox=FieldReadback(found=True, value='unchecked'))
@@ -185,6 +174,7 @@ class BrowserSkillGreenhouseTests(unittest.TestCase):
     def test_company_name_extraction(self):
         url = 'https://job-boards.greenhouse.io/bitgo/jobs/8880855002'
         self.assertEqual(company_from_page('Job Application for Senior Data Engineer at BitGo', url), 'BitGo')
+        self.assertEqual(company_from_page('Job Application for Engineer at Gusto, Inc.', url), 'Gusto, Inc.')
         self.assertEqual(company_from_page('Job Application for Engineer at Foo at Gusto, Inc.', url), 'Gusto, Inc.')
         for title in ('page_title', '', 'Unknown', 'Job Application for Senior Data Engineer at page_title',
                       'Job Application for Senior Data Engineer'):

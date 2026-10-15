@@ -56,6 +56,20 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(report.optional_review_count, 1)
         self.assertEqual(report.review_count, 0)
 
+    def test_duplicate_optional_ids_with_verification_are_listed_for_review(self):
+        optional_fields = [
+            field("demographic", "Gender", False),
+            field("demographic", "Ethnicity", False),
+        ]
+        report = build_readiness_report(
+            [verification(), verification("demographic")],
+            [],
+            [field(), *optional_fields],
+        )
+        self.assertEqual(report.status, "READY")
+        self.assertEqual(report.optional_review_items, ["Gender", "Ethnicity"])
+        self.assertEqual(report.optional_review_count, 2)
+
     def test_optional_demographics_do_not_block(self):
         demographics = [field("gender", "Gender", False), field("ethnicity", "Ethnicity", False)]
         report = build_readiness_report([verification()], demographics, [field(), *demographics])

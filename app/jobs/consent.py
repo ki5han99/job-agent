@@ -22,7 +22,7 @@ UNAPPROVED = [
                                        r"contact me|communicat|updates?|talent (?:pool|community|network)|future (?:job|opportunit|role|position)|stay in touch"),
     ("data sharing / sale", r"\bshare\b|\bsell\b|\bsale\b|disclos|affiliates?\b|third[- ]part(?:y|ies)(?! background)"),
     ("rights waiver / assignment", r"waive|release (?:of|any)|indemnif|non-?compete|assign(?:ment)? of|confidentiality agreement"),
-    ("opposite polarity", r"\bdo not (?:consent|agree|want)|\bdon'?t (?:consent|agree|want)|opt[- ]out|unsubscribe|withdraw|decline|refuse|\bno,"),
+    ("opposite polarity", r"\bdo not (?:consent|agree|want|authori[sz]e|permit|allow)|\bdon'?t (?:consent|agree|want|authori[sz]e|permit|allow)|\bnot authori[sz]e|opt[- ]out|unsubscribe|withdraw|decline|refuse|\bno,"),
 ]
 BARE_PRIVACY = {"privacy", "privacy policy", "privacy notice", "privacy statement"}
 

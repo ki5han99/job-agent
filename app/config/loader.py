@@ -34,8 +34,8 @@ def load_profile() -> Profile:
 def load_answers(path: str | Path = "data/answers.yaml") -> AnswerPolicies:
     """answers.yaml may be empty; an empty file approves nothing."""
     with Path(path).open("r", encoding="utf-8") as file:
-        data = yaml.safe_load(file) or {}
-    return AnswerPolicies.model_validate(data)
+        data = yaml.safe_load(file)
+    return AnswerPolicies.model_validate({} if data is None else data)
 
 
 def load_preferences() -> Preferences:

@@ -28,6 +28,8 @@ class ConsentClassificationTests(unittest.TestCase):
         'I consent to my data being shared with third parties',
         'I agree to waive any claims against the company',
         'I do not consent to the processing of my personal data',
+        'I do not authorize a background check',
+        "I don't authorize the company to run a background check",
         'ASA', 'CFA', '',
     )
 

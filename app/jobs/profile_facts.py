@@ -220,14 +220,20 @@ def domain_years(profile, domain: str, today: date | None = None) -> float | Non
     text = " ".join(text.split())
     if not text or GENERIC_EXPERIENCE.match(text):
         return experience_years(profile, today)
+    matched = [k for k in DOMAIN_EVIDENCE if k in text]
+    if len({k for k in matched if k not in ("etl", "data pipeline")} | ({"etl"} if {"etl", "data pipeline"} & set(matched) else set())) > 1:
+        return None   # a compound requirement ("data engineering and analytics") needs evidence for every part
     for key, terms in DOMAIN_EVIDENCE.items():
         if key in text:
             jobs = [j for j in profile.experience if _job_matches(j, terms)]
             return _merged_months([_interval(j, today) for j in jobs]) / 12 if jobs else 0.0
-    for tech in sorted({t for j in profile.experience for t in j.technologies}, key=len, reverse=True):
-        if re.search(r"(?<![a-z0-9+#])" + re.escape(tech.casefold()) + r"(?![a-z0-9+#])", text):
-            return experience_years(profile, today, tech)
-    return None
+    named = [t for t in sorted({t for j in profile.experience for t in j.technologies}, key=len, reverse=True)
+             if re.search(r"(?<![a-z0-9+#])" + re.escape(t.casefold()) + r"(?![a-z0-9+#])", text)]
+    from app.jobs.grounding import TECH_VOCAB   # lazy: grounding imports this module
+    mentioned = {t for t in TECH_VOCAB if re.search(r"(?<![a-z0-9+#])" + re.escape(t) + r"(?![a-z0-9+#])", text)}
+    if len(mentioned | {t.casefold() for t in named}) > 1:
+        return None   # "Python and Java": one technology's years do not establish the other
+    return experience_years(profile, today, named[0]) if named else None
 
 
 def meets_experience_threshold(profile, minimum: float, domain: str = "", today: date | None = None) -> bool | None:

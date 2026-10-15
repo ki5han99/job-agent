@@ -68,7 +68,7 @@ def parse_form_fields(
         # React Select's required validation proxy is visually measurable, but
         # is not a second question. Only omit it if its real widget was parsed.
         if (
-            not field_id and not name and not label.strip() and not role
+            not field_id and not label.strip() and not role
             and element.get_attribute("aria-hidden") == "true"
             and element.get_attribute("tabindex") == "-1"
         ):

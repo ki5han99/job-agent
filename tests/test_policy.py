@@ -361,7 +361,7 @@ class SemanticIntentTests(PolicyBase):
 
     def test_llm_names_the_intent_but_code_supplies_the_answer(self):
         self.ctx.llm_classify = lambda label: {"intent": "RELOCATION", "negated": False}
-        self.assertIs(self.answer("Would moving to another city for this position be a problem for you at all?"), True)
+        self.assertIs(self.answer("Are you willing to move to another city for this position?"), True)
 
     def test_llm_cannot_invent_intents_or_flip_polarity(self):
         for reply in ({"intent": "PAYS_BILLS"}, {"intent": "SPONSORSHIP", "negated": True},

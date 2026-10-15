@@ -51,6 +51,7 @@ class FormVerifierTests(unittest.TestCase):
     def test_input_combobox_reads_current_input_value(self):
         self.element.evaluate.return_value = "input"
         self.element.input_value.return_value = "Selected"
+        self.element.locator.return_value.locator.return_value.count.return_value = 0
 
         result = verify_field(
             self.browser,
@@ -61,7 +62,19 @@ class FormVerifierTests(unittest.TestCase):
         self.assertEqual(result.status, "VERIFIED")
         self.assertEqual(result.actual_value, "Selected")
         self.element.input_value.assert_called_once_with()
-        self.element.locator.assert_not_called()
+
+    def test_input_combobox_prefers_the_committed_value_over_filter_text(self):
+        self.element.evaluate.return_value = "input"
+        self.element.input_value.return_value = "sel"        # React Select filter text
+        committed = Mock()
+        committed.count.return_value = 1
+        committed.inner_text.return_value = "Selected"
+        self.element.locator.return_value.locator.return_value = committed
+
+        result = verify_field(self.browser, self.make_field("text", role="combobox"), "selected")
+
+        self.assertEqual(result.status, "VERIFIED")
+        self.assertEqual(result.actual_value, "Selected")
 
     def test_non_input_combobox_uses_displayed_selected_value(self):
         self.element.evaluate.return_value = "div"

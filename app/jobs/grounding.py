@@ -44,7 +44,9 @@ def ungrounded_claims(text: str, profile, job=None) -> list[str]:
     level = facts.highest_education(profile)
     if re.search(r"\bph\.?d\b|doctorate", text, re.IGNORECASE) and level != "Doctorate":
         problems.append("claims a doctorate")
-    if re.search(r"\bmba\b", text, re.IGNORECASE):
+    holds_mba = any(re.search(r"\bmba\b|business administration", f"{e.degree} {e.field_of_study}", re.IGNORECASE)
+                    for e in facts.completed_education(profile))
+    if re.search(r"\bmba\b", text, re.IGNORECASE) and not holds_mba:
         problems.append("claims an MBA")
     allowed = candidate_evidence(profile)
     job_text = ((getattr(job, "description", "") or "") + " " + (getattr(job, "title", "") or "")).casefold()

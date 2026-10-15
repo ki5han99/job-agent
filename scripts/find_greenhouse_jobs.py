@@ -6,6 +6,7 @@ Without --write the candidates are only printed. With --write they replace data/
 """
 import argparse
 import json
+import sys
 import re
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -25,7 +26,7 @@ def seen_ids() -> set[str]:
     ids: set[str] = set()
     for path in [*ROOT.glob("data/test_jobs*.yaml"), ROOT / "data" / "submissions.json"]:
         if path.exists():
-            ids.update(re.findall(r"/jobs/(\d+)", path.read_text()))
+            ids.update(re.findall(r"/jobs/(\d+)", path.read_text(encoding="utf-8")))
     return ids
 
 
@@ -33,7 +34,8 @@ def fetch_board(token: str) -> tuple[str, list]:
     try:
         with urllib.request.urlopen(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs", timeout=15) as r:
             return token, json.load(r)["jobs"]
-    except Exception:
+    except Exception as error:
+        print(f"warning: could not fetch board {token}: {error}", file=sys.stderr)
         return token, []
 
 
@@ -59,7 +61,7 @@ def main() -> None:
     with ThreadPoolExecutor(16) as pool:
         for token, jobs in pool.map(fetch_board, tokens):
             for job in jobs:
-                loc = job["location"]["name"]
+                loc = (job.get("location") or {}).get("name") or ""
                 if (str(job["id"]) in used or not TITLE.search(job["title"]) or SENIORITY_OUT.search(job["title"]) or NOT_A_FIT.search(job["title"])
                         or not US_OK.search(loc) or FOREIGN.search(loc)):
                     continue
@@ -80,7 +82,7 @@ def main() -> None:
                  "default_job: job_01", "", "jobs:"]
         for i, (token, title, loc, url) in enumerate(picked, 1):
             lines += [f"  job_{i:02d}:", f"    company: {token}", f"    title: {json.dumps(title)}", f"    url: {url}"]
-        (ROOT / "data" / "test_jobs.yaml").write_text("\n".join(lines) + "\n")
+        (ROOT / "data" / "test_jobs.yaml").write_text("\n".join(lines, encoding="utf-8") + "\n")
         print("wrote data/test_jobs.yaml")
 
 

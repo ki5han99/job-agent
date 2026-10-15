@@ -297,18 +297,19 @@ def verify_field(
                 "(el) => el.tagName.toLowerCase()"
             )
 
-            if tag_name == "input":
+            # React Select keeps only filter text in the <input>; the committed choice is shown separately.
+            selected_value = element.locator(
+                "xpath=../.."
+            ).locator(
+                ".select__single-value"
+            )
+            if tag_name == "input" and selected_value.count() == 0:
                 actual_value = (
                     element
                     .input_value()
                     .strip()
                 )
             else:
-                selected_value = element.locator(
-                    "xpath=../.."
-                ).locator(
-                    ".select__single-value"
-                )
 
                 if selected_value.count() > 0:
                     actual_value = (

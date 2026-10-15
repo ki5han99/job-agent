@@ -2,7 +2,18 @@
 import json
 import re
 
+from pydantic import BaseModel, ConfigDict, ValidationError
+
 from app.jobs.policy import INTENTS
+
+
+class IntentClassification(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+    intent: str
+    company: str | None = None
+    skill: str | None = None
+    negated: bool = False
+    country: str | None = None
 
 PROMPT = """Classify this job-application form question into ONE intent, or "NONE".
 
@@ -26,4 +37,8 @@ def classify_with_llm(label: str, ask=None) -> dict | None:
         data = json.loads(match.group(0))
     except ValueError:
         return None
-    return data if isinstance(data, dict) and data.get("intent") in INTENTS else None
+    try:
+        parsed = IntentClassification.model_validate(data)
+    except ValidationError:
+        return None
+    return parsed.model_dump() if parsed.intent in INTENTS else None
