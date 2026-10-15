@@ -33,6 +33,25 @@ class ReviewFixTests(unittest.TestCase):
         for domain in ("Python and Java", "data engineering and analytics", "Python/Java"):
             self.assertIsNone(facts.domain_years(profile, domain), domain)
 
+    def test_compound_domain_and_technology_require_evidence_for_both(self):
+        profile = make_profile()
+        self.assertAlmostEqual(
+            facts.domain_years(profile, "ETL and Python"),
+            facts.domain_years(profile, "ETL"),
+        )
+        for job in profile.experience:
+            job.technologies = [technology for technology in job.technologies if technology.casefold() != "python"]
+        self.assertIsNone(facts.domain_years(profile, "ETL and Python"))
+
+    def test_etl_job_technology_is_not_counted_as_an_additional_requirement(self):
+        profile = make_profile()
+        for job in profile.experience:
+            job.technologies.append("ETL")
+        self.assertAlmostEqual(
+            facts.domain_years(profile, "ETL and Python"),
+            facts.domain_years(profile, "ETL"),
+        )
+
     def test_llm_classification_must_match_the_full_contract(self):
         def ask(reply):
             return lambda prompt, temperature=0.0: reply

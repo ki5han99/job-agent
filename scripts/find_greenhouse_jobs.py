@@ -82,7 +82,7 @@ def main() -> None:
                  "default_job: job_01", "", "jobs:"]
         for i, (token, title, loc, url) in enumerate(picked, 1):
             lines += [f"  job_{i:02d}:", f"    company: {token}", f"    title: {json.dumps(title)}", f"    url: {url}"]
-        (ROOT / "data" / "test_jobs.yaml").write_text("\n".join(lines, encoding="utf-8") + "\n")
+        (ROOT / "data" / "test_jobs.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
         print("wrote data/test_jobs.yaml")
 
 

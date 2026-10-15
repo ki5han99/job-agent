@@ -49,18 +49,21 @@ def ungrounded_claims(text: str, profile, job=None) -> list[str]:
     if re.search(r"\bmba\b", text, re.IGNORECASE) and not holds_mba:
         problems.append("claims an MBA")
     allowed = candidate_evidence(profile)
-    job_text = ((getattr(job, "description", "") or "") + " " + (getattr(job, "title", "") or "")).casefold()
     lowered = text.casefold()
     for tech in sorted(TECH_VOCAB):
         word = r"(?<![a-z0-9+#])" + re.escape(tech) + r"(?![a-z0-9+#])"
         if re.search(word, lowered):
-            supported = tech in allowed or any(tech in a.split() for a in allowed) or re.search(word, job_text)
+            supported = tech in allowed or any(tech in a.split() for a in allowed)
             if not supported:
                 problems.append(f"names {tech} without candidate evidence")
-    known = [e.company for e in profile.experience] + [getattr(job, "company", "") or ""]
-    known += [i.institution for i in profile.education]
+    known = [e.company for e in profile.experience]
     for match in re.finditer(r"\b(?:worked|working|employed|interned|role|position|experience)\s+(?:at|with|for)\s+"
-                             r"([A-Z][\w&.\-]*(?:\s+[A-Z][\w&.\-]*){0,3})", text):
+                             r"([A-Z][\w&\-]*(?:\.[A-Z][\w&\-]*)*(?:\s+[A-Z][\w&\-]*(?:\.[A-Z][\w&\-]*)*){0,3})", text):
+        is_application_role = re.match(r"(?:role|position)\s+(?:at|with|for)\b", match.group(0), re.IGNORECASE)
+        if is_application_role and re.search(
+            r"\bapplying for\b[^.!?]*$", text[:match.start()], re.IGNORECASE
+        ):
+            continue
         name = facts.normalize_company(match.group(1))
         if name and not any(name.startswith(facts.normalize_company(k)) or facts.normalize_company(k).startswith(name)
                             for k in known if k):
