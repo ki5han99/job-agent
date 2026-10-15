@@ -413,6 +413,26 @@ class GroundingAndCoverLetterTests(PolicyBase):
             with self.subTest(text=text):
                 self.assertTrue(any(needle.lower() in p.lower() for p in ungrounded_claims(text, self.profile, self.job)), text)
 
+    def test_job_requirements_do_not_support_candidate_skill_claims(self):
+        job = SimpleNamespace(title="Data Engineer", company="Gemini", description="Dagster experience required.")
+        claim = "I have expertise in Dagster."
+        self.assertTrue(any("dagster" in problem.lower() for problem in ungrounded_claims(claim, self.profile, job)))
+        letter = self.GOOD.replace("dbt and SQL", "Dagster and SQL")
+        self.assertIsNone(generate_cover_letter(self.profile, job, ask=lambda prompt, t=0.3: letter))
+
+    def test_target_and_education_names_do_not_support_employment_claims(self):
+        job = SimpleNamespace(title="Data Engineer", company="Gemini", description="")
+        self.assertTrue(ungrounded_claims("I worked at Gemini.", self.profile, job))
+        self.profile.education[0].institution = "Example University"
+        self.assertTrue(ungrounded_claims("I worked at Example University.", self.profile, job))
+        self.assertEqual(ungrounded_claims("I worked at Amazon.", self.profile, job), [])
+
+    def test_application_role_does_not_hide_later_employment_claim(self):
+        text = "I am applying for the Data Engineer role at Gemini, and worked at Google."
+        problems = ungrounded_claims(text, self.profile, self.job)
+        self.assertTrue(any("Google" in problem for problem in problems))
+        self.assertFalse(any("Gemini" in problem for problem in problems))
+
     def test_cover_letter_generated_only_when_grounded(self):
         self.assertEqual(generate_cover_letter(self.profile, self.job, ask=lambda prompt, t=0.3: self.GOOD), self.GOOD)
         invented = self.GOOD.replace("dbt and SQL", "Dagster and SQL")
